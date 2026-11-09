@@ -1,0 +1,10 @@
+{
+  "name": "sigisac-web",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SIGISAC ERP Profesional en Netlify con base compartida (Netlify Functions + Blobs)",
+  "dependencies": {
+    "@netlify/blobs": "^8.1.0"
+  }
+}

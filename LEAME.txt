@@ -1,0 +1,34 @@
+SIGISAC ERP PROFESIONAL V2.0.0 - WEB EN NETLIFY CON BASE COMPARTIDA
+
+Con esta versión, los usuarios y claves creados por el administrador se reconocen al instante en cualquier
+ordenador, tablet o celular. También se comparten las alertas, ingresos, mensajes, entidades por usuario y Campo.
+La base compartida vive en su propio sitio de Netlify (Netlify Functions + Netlify Blobs), sin servidor adicional.
+
+Contenido:
+  public/index.html            Sistema SIGISAC
+  netlify/functions/db.mjs     Base compartida (/api/db)
+  package.json, netlify.toml   Configuración de Netlify
+
+IMPORTANTE: arrastrar la carpeta en "Deploys" NO publica la base compartida (Netlify no instala funciones
+con arrastrar y soltar). Publique con una de estas dos formas:
+
+A) GitHub (recomendada: además se actualiza solo con cada cambio)
+   1. Suba el contenido de esta carpeta a un repositorio de GitHub (p. ej. sigisac-web).
+   2. Netlify > segisacerp > Project configuration > Build & deploy > Link repository > GitHub > sigisac-web.
+      Build command: (vacío)   Publish directory: public
+   3. Netlify publica en 1-2 minutos. Cada cambio en el repositorio se publica solo.
+
+B) Desde su PC con doble clic (Windows): ejecute PUBLICAR_SIGISAC.bat
+   (instala lo necesario, abre Netlify para iniciar sesión y publica en segisacerp con la base).
+   Requiere Node.js LTS (nodejs.org). Equivale a estos comandos:
+   1. Abra una terminal dentro de esta carpeta.
+   2. npm install
+   3. npx netlify-cli login
+   4. npx netlify-cli link        (elija el proyecto segisacerp)
+   5. npx netlify-cli deploy --prod
+
+Comprobar: abra https://segisacerp.netlify.app/api/db?c=_ping  -> debe responder {"sigisac":1,"ok":true}
+Luego ingrese con admin y CAMBIE LA CLAVE INICIAL (avatar > Cambiar clave).
+
+Nota de seguridad: la base del sitio no requiere cuenta de Netlify para leerse; las claves se guardan cifradas
+(PBKDF2), pero para entidades con información sensible use el servidor SIGISAC con PostgreSQL (SIGISAC_Server.zip).
