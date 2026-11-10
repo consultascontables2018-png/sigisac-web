@@ -1937,6 +1937,37 @@ const IMP = (() => {
     return null;
   }
 
+  /* Formato de inventario del SIGA MP (fmt_inventario_AAAA): CODIGO_PATRIMONIAL, NOMBRE_AREA, NRO_CUENTA_CONTABLE,
+     VALOR_ADQUISICION, VALOR_DEPREC_ACUMULADO, ESTADO_BIEN, CONDICION… → filas del registro patrimonial (58 columnas).
+     Solo bienes en condición ACTIVA (CONDICION = A); los dados de baja se cuentan aparte y no entran al registro. */
+  function parseFmt(sheets) {
+    for (const sh of sheets) {
+      const hi = findHeader(sh.rows, /^NRO CUENTA CONTABLE$/); if (hi < 0) continue;
+      const H = (sh.rows[hi] || []).map(up), ix = n => H.indexOf(n);
+      if (ix('CODIGO PATRIMONIAL') < 0 || ix('NOMBRE AREA') < 0) continue;
+      const g = (r, n) => { const i = ix(n); return i < 0 ? '' : (r[i] ?? ''); }, t = v => String(v ?? '').trim();
+      const out = [], bajas = [], ctas = {}, areas = {};
+      for (const r of sh.rows.slice(hi + 1)) {
+        if (!r) continue; const cod = codStr(g(r, 'CODIGO PATRIMONIAL')); if (!cod) continue;
+        const cnd = up(g(r, 'CONDICION')), baja = cnd === 'B' || /BAJA/.test(cnd);
+        const cta = t(g(r, 'NRO CUENTA CONTABLE')).replace(/\s+/g, ''), [may, ...sub] = cta.split('.');
+        const doc = t(g(r, 'NRO DOC ADQUISICION')), mDoc = /^(NEA|O\/?C|OC|PECOSA)\s*[-:.]?\s*(.*)$/i.exec(doc), esNea = mDoc && /^NEA$/i.test(mDoc[1]);
+        const est = up(g(r, 'ESTADO BIEN')), estN = /^(N|B|NUEVO|BUENO)/.test(est) ? 1 : /^(R|REGULAR)/.test(est) ? 2 : 3;
+        const resp = [g(r, 'APELLIDO PATERNO'), g(r, 'APELLIDO MATERNO'), g(r, 'NOMBRES')].map(t).filter(Boolean).join(' ');
+        const row = Array(58).fill('');
+        Object.assign(row, { 3: cod, 6: cod.slice(0, 2), 7: cod.slice(2, 4), 8: cod.slice(4, 8), 10: t(g(r, 'DENOMINACION BIEN')), 12: esNea ? '045' : '031', 15: esNea ? t(mDoc[2]) : '', 18: !esNea ? (mDoc ? t(mDoc[2]) : doc) : '',
+          20: serialToISO(g(r, 'FECHA ADQUISICION')), 30: t(g(r, 'MARCA')), 31: t(g(r, 'MODELO')), 32: t(g(r, 'DIMENSION')), 33: t(g(r, 'SERIE')), 38: estN,
+          45: Math.round(numTxt(g(r, 'VALOR ADQUISICION')) * 100) / 100, 46: Math.round(numTxt(g(r, 'VALOR DEPREC ACUMULADO')) * 100) / 100, 50: sub.join('.'), 51: may || '',
+          54: t(g(r, 'NOMBRE AREA')), 55: '', 56: resp, 57: '' });
+        if (baja) { bajas.push(row); continue; }
+        out.push(row); const k = cta || 'SIN CUENTA', a = row[54] || 'SIN ÁREA';
+        (ctas[k] = ctas[k] || { n: 0, v: 0 }).n++; ctas[k].v += row[45]; areas[a] = (areas[a] || 0) + 1;
+      }
+      return { kind: 'FMT', sheet: sh.name, rows: out, bajas: bajas.length, ctas, areas };
+    }
+    return null;
+  }
+
   /* Formato inventario (valorizado / SINABIP / por área) */
   function parseInv(sheets) {
     for (const sh of sheets) {
@@ -1960,11 +1991,11 @@ const IMP = (() => {
         if (/ESTADO/.test(a) && !/CUENTA/.test(a)) set('estado', i); if (/SITUACION|USO/.test(a)) set('sit', i);
         if (/DOCUMENTO|NRO DOC|NUM DOC ADQ/.test(a) && !/PERS/.test(a)) set('doc', i);
         if (/FEC(HA)? (DE )?(ADQ|COMPRA|ALTA|INGRESO)/.test(a)) set('fechaAdq', i); else if (/^FEC(HA)?$|^FECHA (DEL )?(DOC|DOCUMENTO)/.test(a)) set('fecha', i);
-        if (/CORRECCION/.test(a)) set('ctaCorr', i); else if (/CUENTA|(^|\s)CTA(\s|$)/.test(a) && !/DESC|NOMBRE|DENOM/.test(a)) set('cta', i);
+        if (/CORRECCION/.test(a)) set('ctaCorr', i); else if (/CUENTA|(^|\s)CTA(\s|$)/.test(a) && !/DESC|NOMBRE|DENOM|^TIPO|SEGURO/.test(a)) set('cta', i);
         if (/VALOR (DE )?ADQ|VAL ADQ|VALOR INICIAL|VALOR (DE )?COMPRA|^VALOR$|VALOR LIBROS|PRECIO|^IMPORTE|VALOR (DEL )?BIEN/.test(a) && !/NETO|DEPREC|RESIDUAL|DEP /.test(a)) set('valor', i);
         if (/CODIGO (DE )?INVENTARIO|COD INVENTARIO|NRO (DE )?INVENTARIO|CODIGO INTERNO/.test(a)) set('codInv', i);
         else if (/^(COD|CODIGO|DNI|NRO|ID)\b/.test(a)) { /* códigos o DNI: no son nombres */ }
-        else if (/^DESC(RIPCION)?( DE| DEL)? AREA\b/.test(a)) { set('dep', i); set('ubiArea', i); } // SINABIP: DESC_AREA → Dependencia y Ubicación física
+        else if (/^DESC(RIPCION)?( DE| DEL)? AREA\b|^NOMBRE (DEL? )?AREA$/.test(a)) { set('dep', i); set('ubiArea', i); } // SINABIP: DESC_AREA → Dependencia y Ubicación física
         else if (/NOMBRES? PERS|APEPAT|APEMAT/.test(a)) { if (/APEPAT/.test(a)) set('ap', i); else if (/APEMAT/.test(a)) set('am', i); else set('nom', i); } // SINABIP: UE_NOMBRES_PERS, UE_APEPAT_PERS, UE_APEMAT_PERS
         else { if (/DEPENDENCIA|UNIDAD ORGANICA|^AREA|AREA USUARIA|CENTRO DE COSTO/.test(a)) set('dep', i); if (/UBICACION|AMBIENTE|^LOCAL|^SEDE/.test(a)) set('ubi', i);
           if (/RESPONSABLE|USUARIO|EMPLEADO|ASIGNADO|PERSONAL|APELLIDOS Y NOMBRES|NOMBRES Y APELLIDOS/.test(a)) set('resp', i); }
@@ -2018,7 +2049,7 @@ const IMP = (() => {
     return { meta: { ...meta, archivo: file.name, importado: new Date().toISOString(), inconsistencias: bad }, acc };
   }
 
-  return { readFile, parseSiga, parseInv, parseBalancePDF, serialToISO, codStr, ctaStr };
+  return { readFile, parseSiga, parseFmt, parseInv, parseBalancePDF, serialToISO, codStr, ctaStr };
 })();
 
 /* ============================================================
@@ -3994,6 +4025,7 @@ VIEWS.anual = { render(el) {
   const m = M('anual'), s = SS('anual'), y = ENG.year(S.cfg.corte);
   el.innerHTML = hero(m, s, 'Creación del inventario del ejercicio: periodo, fecha de corte y método de depreciación. Al cambiar el periodo se recalculan depreciación, conciliación y notas.', 'log') + `<div style="--c:var(${m.c});display:grid;gap:18px">
   ${card('Periodo de inventario', 'calendar-plus', `<div class="form-grid">${select('Ejercicio', 'a-y', Array.from({ length: 8 }, (_, i) => 2020 + i), y, 'calendar')}${field('Fecha de corte', 'a-c', S.cfg.corte, '', 'calendar-check', 'date')}${select('Método de depreciación', 'a-m', [['LR', 'Línea recta'], ['SD', 'Suma de dígitos'], ['UP', 'Unidades de producción']], S.cfg.metodo, 'sigma')}</div>
+    ${(S.base || []).length ? (() => { const L = sigaPorCuenta(), na = new Set((S.base || []).map(r => String(r[54] || '').trim().toUpperCase() || 'SIN ÁREA')).size; return `<div class="alert" style="--k:var(--ok);margin-top:14px">${ic('server-cog')}<div><b>Data SIGA MP reconocida:</b> ${fmtI(S.base.length)} bienes activos · ${money(L.reduce((t, x) => t + x.v, 0))} · ${fmtI(L.length)} cuentas contables · ${fmtI(na)} áreas. Al aperturar el inventario, este es el universo de Planificación y Campo.</div></div>`; })() : `<div class="alert" style="--k:var(--warn);margin-top:14px">${ic('info')}<div>Sin Data SIGA MP: cárguela en <b>Configuración › Data</b> para que Planificación y Campo tengan el universo de bienes por área.</div></div>`}
     <div class="row" style="margin-top:16px"><button class="mini" style="--c:var(--ok)" data-a="open">${ic('calendar-plus')}Aperturar inventario</button><button class="mini danger" data-a="del">${ic('trash-2')}Eliminar inventario</button><button class="mini danger" data-a="close">${ic('lock-keyhole')}Cerrar inventario</button></div>`)}
   ${card('Inventarios registrados', 'history', `<div class="tbl-wrap"><table><thead><tr><th>Ejercicio</th><th>Fecha de corte</th><th>Estado</th><th>Creado</th><th class="r">Bienes</th></tr></thead><tbody>${(S.cfg.periodos || []).map(p => `<tr><td class="mono">${p.anio}</td><td>${fmtD(p.corte)}</td><td>${p.estado === 'ABIERTO' ? '<span class="badge" style="--k:var(--ok)">ABIERTO</span>' : '<span class="badge" style="--k:var(--bad)">CERRADO</span>'}</td><td>${fmtD(p.creado)}</td><td class="r num">${fmtI(p.bienes ?? S.inv.length)}</td></tr>`).join('')}</tbody></table></div>`)}</div>`;
   el.onchange = e => { const id = e.target.id;
@@ -4104,7 +4136,13 @@ VIEWS.data = { render(el) {
 }, async file(f, key) {
   if (key === 'bal') { toast('Leyendo balance SIAF…', 'info'); const bal = await IMP.parseBalancePDF(f); const nom = (bal.meta.entidad || '').replace(/^\d+\s+/, '').replace(/\s*\(\d+\)\s*$/, '');
     return entCheck('bal', { ue: bal.meta.ue, nombre: nom }, () => { S.bal = bal; if (bal.meta.ue && !S.cfg.entidad.ue) S.cfg.entidad.ue = bal.meta.ue; mutate(`Balance SIAF importado: ${f.name} (${bal.acc.length} cuentas)`); refresh(); setTimeout(() => avisoBalance(bal), 60); }); }
-  const sh = await IMP.readFile(f), sg = IMP.parseSiga(sh), iv = sg ? null : IMP.parseInv(sh);
+  const sh = await IMP.readFile(f);
+  const fm = key === 'siga' ? IMP.parseFmt(sh) : null; /* formato de inventario del SIGA MP: solo se carga el registro patrimonial (no toca la data SINABIP) */
+  if (fm) { if (!fm.rows.length) throw new Error('El archivo no tiene bienes en condición ACTIVA (CONDICION = A).');
+    return entCheck('siga', { secEjec: '' }, () => { S.base = fm.rows; if (VIEWS.data.sel) delete VIEWS.data.sel.siga; invalidate();
+      mutate(`Data SIGA MP importada (formato de inventario): ${f.name} · ${fm.rows.length} bienes activos, ${Object.keys(fm.ctas).length} cuentas, ${Object.keys(fm.areas).length} áreas${fm.bajas ? `, ${fm.bajas} de baja excluidos` : ''}`);
+      refresh(); setTimeout(() => avisoSiga(fm, f.name), 60); }); }
+  const sg = IMP.parseSiga(sh), iv = sg ? null : IMP.parseInv(sh);
   if (!sg && !iv) throw new Error('No se reconoció la estructura. Se esperaba la columna CODIGO_ACTIVO (SIGA MP) o CÓDIGO PATRIMONIAL.');
   if (key === 'siga') { const sec = sg ? String(sg.rows[0]?.[0] ?? '') : ''; return entCheck('siga', { secEjec: sec }, () => { if (sg) { S.base = sg.rows; if (sg.hdr.length >= 4) S.migHdr = sg.hdr; } else S.base = iv.rows.map(b => bienToBaseRow(b)); invalidate(); mutate(`Data SIGA MP importada: ${f.name} (${S.base.length} bienes)`); toast(`SIGA MP: ${fmtI(S.base.length)} bienes cargados en ${S.cfg.entidad.nombre}`, 'ok'); refresh(); }); }
   else if (key === 'sinabip') { const todos = sg ? sg.rows.map(bienFromBase) : iv.rows; VIEWS.data.sbnBajas = todos.filter(b => b.baja).length; S.sinabip = todos.filter(b => !b.baja); S.cfg.sinabipBajas = VIEWS.data.sbnBajas; invalidate(); mutate(`Data SINABIP importada: ${f.name} (${S.sinabip.length})`); toast(`SINABIP: ${fmtI(S.sinabip.length)} bienes cargados en ${S.cfg.entidad.nombre}`, 'ok');
@@ -4116,6 +4154,16 @@ VIEWS.data = { render(el) {
   refresh();
 } };
 function bienToBaseRow(b) { const r = Array(58).fill(''); Object.assign(r, { 3: b.cod, 6: b.cod.slice(0, 2), 7: b.cod.slice(2, 4), 8: b.cod.slice(4, 8), 10: b.den, 12: '031', 20: b.fecha, 30: b.marca, 31: b.modelo, 32: b.dim, 33: b.serie, 38: { BUENO: 1, REGULAR: 2, MALO: 3 }[b.estado] || 3, 45: b.valor, 46: 0, 50: (ENG.ctaFinal(b).split('.')[1] || ''), 51: ENG.ctaFinal(b).split('.')[0] || '', 54: b.dep, 55: b.ubi, 56: b.resp, 57: b.codInv }); return r; }
+/* Registro patrimonial SIGA MP agrupado por cuenta contable (para Conciliación y para el aviso de carga) */
+function sigaPorCuenta() { return cached('sigaCta', () => { const m = {}; for (const r of S.base || []) { const k = r[51] && r[50] !== '' ? `${r[51]}.${r[50]}` : 'SIN CUENTA', x = m[k] = m[k] || { cta: k, n: 0, v: 0, d: 0 };
+  x.n++; x.v += +r[45] || 0; x.d += +r[46] || 0; } return Object.values(m).sort((a, b) => a.cta.localeCompare(b.cta)); }); }
+function avisoSiga(fm, archivo) { const L = sigaPorCuenta(), v = L.reduce((t, x) => t + x.v, 0), na = Object.keys(fm.areas).length, y = ENG.year(S.cfg.corte), ap = aperturado();
+  $('#modal').innerHTML = `<div class="m-card aviso ok wide" role="alertdialog" aria-modal="true" aria-labelledby="asT"><div class="av-ico">${ic('circle-check')}</div><h3 id="asT">¡Data SIGA MP cargada: ${fmtI(fm.rows.length)} bienes activos!</h3>
+    <p>Formato de inventario del SIGA MP reconocido · <span class="mono">${h(archivo || '')}</span></p>
+    <div class="kpis" style="width:100%;text-align:left">${kpi('Valor de adquisición', money(v), 'bienes activos', '--ok')}${kpi('Cuentas contables', fmtI(L.length), '→ Conciliación', '--c-inv')}${kpi('Áreas', fmtI(na), '→ Planificación', '--c-cfg')}${kpi('De baja', fmtI(fm.bajas), 'no entran al registro', '--warn')}</div>
+    <p style="font-size:12px">La data SINABIP no se modificó. ${ap ? `Inventario ${y} aperturado: el universo de Campo y Planificación se actualizó.` : `<b>Inventario ${y} no aperturado:</b> apertúrelo para empezar Campo.`}</p>
+    <div class="av-btns"><button class="mini" data-a="asGo" data-g="conciliacion">${ic('scale')}Conciliación por cuenta</button><button class="mini" data-a="asGo" data-g="planificacion">${ic('clipboard-list')}Planificación</button><button class="mini" data-a="asGo" data-g="campo">${ic('scan-barcode')}Campo</button><button class="btn-glow" data-a="asGo" data-g="anual">${ic('calendar-plus')}${ap ? 'Crear inventario anual' : 'Aperturar inventario ' + y}</button></div></div>`;
+  $('#modal').hidden = false; }
 let GLOBAL_ACT_EXTRA = {};
 const GLOBAL_ACT = {
   impMerge() { const rows = VIEWS.data.pending || [], idx = invMap(); let n = 0, u = 0; for (const b of rows) { const i = idx.get(b.cod); if (i && b.cod) { Object.assign(S.inv[i[0]], b); u++; } else { S.inv.push(b); n++; } } autoCorr(); mutate(`Inventario completado: ${n} nuevos, ${u} actualizados`); closeModal(); toast(`${fmtI(n)} nuevos, ${fmtI(u)} actualizados`, 'ok'); refresh(); },
@@ -4734,6 +4782,11 @@ VIEWS.conciliacion = { render(el) {
     const e = S.cfg.entidad || {}, bn = String(b?.entidad || '').replace(/^\s*ENTIDAD\s*:\s*/i, '').trim(), nom = bn || [e.nombre, e.ue ? `(${e.ue})` : ''].filter(Boolean).join(' ');
     return `<div class="hero-ent"><span class="lbl">${ic('landmark')}Entidad</span><b>${h(nom || 'Sin entidad registrada')}</b>${b?.ue || e.ue ? `<span class="he-ue">UE ${h(b?.ue || e.ue)}${b?.periodo ? ' · ' + h(String(b.periodo).toLowerCase().replace(/^\w/, c => c.toUpperCase())) : ''}</span>` : ''}${!b ? `<button class="he-warn" data-go="data">${ic('triangle-alert')}Balance SIAF sin cargar · cárguelo en Data</button>` : e.ue && b.ue && b.ue !== e.ue ? `<span class="he-warn">${ic('triangle-alert')}El balance es de la UE ${h(b.ue)}; la entidad es ${h(e.ue)}</span>` : ''}</div></section>`; })()) + `<div style="--c:var(${m.c});display:grid;gap:18px">
   <div class="kpis">${c.rows.filter(r => r.t === 'T').map(r => kpi(`Diferencia ${r.cod}`, money(r.d), `Contable ${money(r.b)} · Inventario ${money(r.c)}`, Math.abs(r.d) < 0.01 ? '--ok' : '--bad')).join('')}${c.dep.map(d => kpi(`Diferencia ${d.cod}`, money(d.d), 'Depreciación acumulada', Math.abs(d.d) < 0.01 ? '--ok' : '--warn')).join('')}</div>
+  ${(S.base || []).length ? (() => { const L = sigaPorCuenta(), bm = ENG.balanceMap(S.bal), sal = c => { if (!S.bal) return null; if (bm[c] != null) return bm[c]; const ks = Object.keys(bm).filter(k => k.startsWith(c) && k !== c); return ks.length ? ks.filter(k => !ks.some(j => j !== k && j.startsWith(k))).reduce((t, k) => t + bm[k], 0) : 0; };
+    const T = L.reduce((a, x) => ({ n: a.n + x.n, v: a.v + x.v, d: a.d + x.d }), { n: 0, v: 0, d: 0 }); let TS = 0;
+    const rows = L.map(x => { const s0 = sal(x.cta); if (s0 != null) TS += s0; const df = s0 == null ? null : x.v - s0;
+      return `<tr><td class="mono">${h(x.cta)}</td><td>${h(ENG.PLANMAP[x.cta]?.[1] || (x.cta === 'SIN CUENTA' ? 'Sin cuenta contable' : '—'))}</td><td class="r num">${fmtI(x.n)}</td><td class="r num">${fmtN(x.v)}</td><td class="r num">${fmtN(x.d)}</td><td class="r num">${fmtN(x.v - x.d)}</td><td class="r num">${s0 == null ? '—' : fmtN(s0)}</td><td class="r num ${df == null ? '' : diffCls(df)}">${df == null ? '—' : fmtN(df)}</td></tr>`; }).join('');
+    return card('Registro patrimonial SIGA MP por cuenta contable', 'server-cog', `<div class="tbl-wrap"><table><thead><tr><th>Cuenta</th><th>Denominación</th><th class="r">Bienes</th><th class="r">Valor adquisición</th><th class="r">Dep. acumulada</th><th class="r">Valor neto</th><th class="r">Saldo contable SIAF</th><th class="r">Diferencia</th></tr></thead><tbody>${rows}<tr class="tot"><td colspan="2"><b>TOTAL</b></td><td class="r num"><b>${fmtI(T.n)}</b></td><td class="r num"><b>${fmtN(T.v)}</b></td><td class="r num"><b>${fmtN(T.d)}</b></td><td class="r num"><b>${fmtN(T.v - T.d)}</b></td><td class="r num"><b>${S.bal ? fmtN(TS) : '—'}</b></td><td class="r num"><b>${S.bal ? fmtN(T.v - TS) : '—'}</b></td></tr></tbody></table></div><p class="dim" style="font-size:12px;margin:8px 0 0">Se arma solo al cargar la Data SIGA MP (Configuración › Data). Alimenta las columnas F y G del Acta de Conciliación (Anexo 05).${S.bal ? '' : ' Cargue el balance SIAF para ver el saldo contable y la diferencia.'}</p>`, `${fmtI(T.n)} bienes · ${fmtI(L.length)} cuentas`); })() : ''}
   ${card('Datos del acta (encabezado del Anexo 05)', 'file-pen-line', `<div class="form-grid">${field('Fecha del acta', 'ac-f', (S.cfg.acta || {}).fecha || '', '', 'calendar', 'date')}${hora12Field((S.cfg.acta || {}).hora || '')}${field('Documento que designa la comisión', 'ac-r', (S.cfg.acta || {}).resolucion || '', 'Resolución de Gerencia N° 0179-2026-MDT/GAF', 'file-text')}${field('Fecha del documento', 'ac-rf', (S.cfg.acta || {}).resFecha || '', '', 'calendar-check', 'date')}</div>
     <div class="acta-prev" id="acPrev">${REP.actaIntroHtml()}</div>
     <p class="dim" style="font-size:12px;margin:8px 0 0">El nombre, la dirección y el ubigeo se toman de <b>Configuración › Entidad</b> y cambian solos con la entidad activa. Si deja la fecha y la hora vacías, se usan las del momento de la descarga.</p>`)}
@@ -4960,6 +5013,7 @@ GLOBAL_ACT_EXTRA = {
   entToActive() { const p = VIEWS.data.entApply; closeModal(); p.apply(); }
 };
 /* Vinculación con el celular */
+GLOBAL_ACT_EXTRA.asGo = b => { closeModal(); go(b.dataset.g); };
 GLOBAL_ACT_EXTRA.vincular = () => vincDialog();
 GLOBAL_ACT_EXTRA.vincFin = () => { vincFin(); if (!$('#modal').hidden && $('.m-card.vinc')) closeModal(); };
 GLOBAL_ACT_EXTRA.camLocal = () => { closeModal(); camScan(); };
@@ -5034,7 +5088,7 @@ document.addEventListener('change', async e => {
 });
 document.addEventListener('dragover', e => { const d = e.target.closest('[data-drop]'); if (d) { e.preventDefault(); d.classList.add('over'); } });
 document.addEventListener('dragleave', e => { const d = e.target.closest('[data-drop]'); if (d) d.classList.remove('over'); });
-function pickFile(key, f) { (VIEWS.data.sel || (VIEWS.data.sel = {}))[key] = f; toast(`Archivo seleccionado: ${f.name}. Pulse Cargar para procesarlo.`, 'info'); if (CUR === 'data') refresh(); }
+function pickFile(key, f) { (VIEWS.data.sel || (VIEWS.data.sel = {}))[key] = f; if (key === 'siga' && CUR === 'data') { refresh(); toast(`Reconociendo ${f.name}…`, 'info', 1800); setTimeout(() => $('[data-a="cargar"][data-k="siga"]')?.click(), 60); return; } /* Data SIGA MP: se reconoce y carga al seleccionar el archivo */ toast(`Archivo seleccionado: ${f.name}. Pulse Cargar para procesarlo.`, 'info'); if (CUR === 'data') refresh(); }
 document.addEventListener('change', e => { const p = e.target.closest('[data-pick]'); if (!p || !p.files?.[0]) return; pickFile(p.dataset.pick, p.files[0]); p.value = ''; });
 document.addEventListener('drop', e => { const d = e.target.closest('[data-drop]'); if (!d) return; e.preventDefault(); d.classList.remove('over'); const f = e.dataTransfer.files[0]; if (f) pickFile(d.dataset.drop, f); });
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
