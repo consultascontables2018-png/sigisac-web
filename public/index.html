@@ -1839,7 +1839,7 @@ function wsAdopt(st) { const d = Object.getOwnPropertyDescriptor(st.cfg, 'usuari
 async function wsFlush() { clearTimeout(saveTimer); if (S) await IDB.set(WS_KEY, S); await IDB.set('usuarios', USERS); }
 function mutate(msg) {
   invalidate(); if (msg) log(msg);
-  clearTimeout(saveTimer); saveTimer = setTimeout(async () => { IDB.set('usuarios', USERS); if (typeof entregPublicar === 'function') entregPublicar(true); savedOk = await IDB.set(WS_KEY, S); const el = $('#saveState'); if (el) { el.textContent = savedOk ? 'Guardado en este navegador' : 'Sin almacenamiento: exporte un respaldo'; el.className = 'save ' + (savedOk ? 'ok' : 'warn'); } }, 600);
+  clearTimeout(saveTimer); saveTimer = setTimeout(async () => { IDB.set('usuarios', USERS); if (typeof entregPublicar === 'function') entregPublicar(true); savedOk = await IDB.set(WS_KEY, S); if (typeof wsSchedule === 'function') wsSchedule(); const el = $('#saveState'); if (el) { el.textContent = savedOk ? 'Guardado en este navegador' : 'Sin almacenamiento: exporte un respaldo'; el.className = 'save ' + (savedOk ? 'ok' : 'warn'); } }, 600);
 }
 function log(msg) { S.log = S.log || []; S.log.unshift({ t: new Date().toISOString(), u: SESSION?.nombre || '', msg }); S.log = S.log.slice(0, 300); }
 
@@ -3212,7 +3212,7 @@ function lgDbEstado() { const el = $('#lgDb'); if (!el) return; if ($('#demoBar'
 async function usrInit() {
   let db = null; try { db = await window.claude?.use?.('db'); } catch (e) { }
   if (!db) db = await netDb();
-  if (db) { USR.db = db; setTimeout(lgDbEstado, 0); try { USR.unsub = db.collection('usuarios').onSnapshot(s => usrApply(s).catch(console.error), () => { USR.ok = false; usrBadge(); }); } catch (e) { console.error(e); } }
+  if (db) { USR.db = db; setTimeout(lgDbEstado, 0); setTimeout(() => { if (SESSION) wsWatch(); }, 0); try { USR.unsub = db.collection('usuarios').onSnapshot(s => usrApply(s).catch(console.error), () => { USR.ok = false; usrBadge(); }); } catch (e) { console.error(e); } }
   usrBadge(); }
 async function usrApply(snap) {
   USR.ok = true; USR.last = new Date();
@@ -5107,7 +5107,51 @@ GLOBAL_ACT_EXTRA.planVer = () => { closeModal(); go('planes'); };
 GLOBAL_ACT_EXTRA.planSolicitar = async b => { closeModal(); await planSolicitar(b.dataset.p); };
 async function startSession(u) { await wsAbrir(u); SESSION = u; document.body.classList.toggle('rol-inv', esInv(u)); try { sessionStorage.setItem('sigisac-sess', u.user); } catch (e) { } $('#login').hidden = true; $('#avatar').textContent = (u.nombre || u.user).split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase(); $('#avatar').title = (u.nombre || u.user) + ' · Cerrar sesión';
   const id = (location.hash || '').slice(1); if (id && !allowed(id)) history.replaceState(null, '', location.pathname + location.search);
-  route(); segPresencia(); segBell(); wsBienvenida(); ntIngreso(u); ENTREG.firma = ''; entregPublicar(); }
+  route(); segPresencia(); segBell(); wsBienvenida(); ntIngreso(u); ENTREG.firma = ''; entregPublicar(); wsWatch(); }
+
+
+/* ---------- Base de trabajo en la nube: la misma información en todos los ordenadores del usuario ----------
+   Cada cambio guardado se sube (comprimido y en partes) a la base compartida del sitio (Claude o Netlify). Al ingresar desde
+   otro ordenador con el mismo usuario y clave se descarga la versión más reciente y, mientras la sesión está abierta, se
+   reciben al instante los avances hechos en cualquier otro ordenador. Los usuarios de inventario solo reciben (su trabajo
+   viaja por Campo compartido), para no pisar la base de su usuario principal.                                              */
+const wsHash = async str => { const b = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(str)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); };
+const WSYNC = { hash: '', key: '', unsub: null, timer: null, ver: '', t: '', listo: false, aplicando: false, dirty: false, subiendo: false };
+const wsMan = k => usrId(String(k)).slice(0, 60), wsCol = k => ('wsd_' + String(k).replace(/[^A-Za-z0-9_-]/g, '')).slice(0, 40), WS_PARTE = 100000;
+async function wsGz(str) { const b = await new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer(), u = new Uint8Array(b); let bin = ''; for (let i = 0; i < u.length; i += 32768) bin += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(bin); }
+function wsJson() { const { fam, cls, items, migHdr, ...rest } = S, o = { ...rest, cfg: { ...S.cfg } }; delete o.cfg.usuarios; if (S.catCustom) Object.assign(o, { fam, cls, items }); return JSON.stringify(o); }
+function wsStop() { try { WSYNC.unsub?.(); } catch (e) { } clearTimeout(WSYNC.timer); Object.assign(WSYNC, { key: '', unsub: null, listo: false, dirty: false }); }
+function wsSchedule(ms = 5000) { if (!USR.db || !SESSION || WSYNC.aplicando || esInv(SESSION)) return; WSYNC.dirty = true; if (!WSYNC.listo) return; clearTimeout(WSYNC.timer); WSYNC.timer = setTimeout(wsPush, ms); }
+async function wsPush() { if (!USR.db || !SESSION || esInv(SESSION) || WSYNC.aplicando) return; if (WSYNC.subiendo) return wsSchedule(3000);
+  const key = WS_KEY; WSYNC.subiendo = true;
+  try { const js = wsJson(), hs = await wsHash(js); if (hs === WSYNC.hash) { WSYNC.dirty = false; return; } /* sin cambios reales en la base de trabajo */
+    const data = await wsGz(js), n = Math.ceil(data.length / WS_PARTE), ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 5), t = new Date().toISOString(), col = USR.db.collection(wsCol(key));
+    for (let i = 0; i < n; i++) await col.doc(ver + '_' + i).set({ ver, i, d: data.slice(i * WS_PARTE, (i + 1) * WS_PARTE) });
+    await USR.db.collection('wsman').doc(wsMan(key)).set({ ws: key, ver, n, t, dev: SEG.dev?.id || '', user: SESSION.user, nombre: SESSION.nombre || '', size: data.length });
+    const prev = WSYNC.ver; Object.assign(WSYNC, { ver, t, dirty: false, hash: hs }); IDB.set('wsync:' + key, { ver, t, hash: hs });
+    if (prev && prev !== ver) col.where('ver', '==', prev).get().then(q => q.docs.forEach(d => col.doc(d.id).delete().catch(() => { }))).catch(() => { });
+    const el = $('#saveState'); if (el) { el.textContent = 'Guardado y sincronizado en la nube'; el.className = 'save ok'; }
+  } catch (e) { console.warn('wsPush', e); const el = $('#saveState'); if (el) { el.textContent = 'Guardado en este navegador (sin sincronizar)'; el.className = 'save warn'; } setTimeout(() => wsSchedule(), 20000); }
+  finally { WSYNC.subiendo = false; } }
+async function wsPull(key, m) { const col = USR.db.collection(wsCol(key)); const q = await col.where('ver', '==', m.ver).get(); const P = q.docs.map(d => d.data()).sort((a, b) => a.i - b.i);
+  if (P.length !== m.n) return false; const st = JSON.parse(await LIB.gunzipB64(P.map(x => x.d).join('')));
+  if (key !== WS_KEY || !st || !st.inv) return false;
+  const sucio = !!WSYNC.hash && (await wsHash(wsJson())) !== WSYNC.hash;
+  if (sucio) { /* cambios locales aún no subidos: se conservan los registros de Campo más recientes de este ordenador */
+    const mp = new Map((st.inv || []).map((b, i) => [String(b.cod), i])); for (const b of S.inv || []) { const i = mp.get(String(b.cod)); if (i == null) st.inv.push(b); else if (String(b.verifT || '') > String(st.inv[i].verifT || '')) st.inv[i] = b; } }
+  WSYNC.aplicando = true;
+  try { st.ver = VER; S = wsAdopt(wsPrep(st)); entEnsure(); S.inv.forEach(b => b.sit = b.sit || sitAuto(b.estado)); invalidate(); await IDB.set(WS_KEY, S); const hs = sucio ? '' : await wsHash(wsJson()); Object.assign(WSYNC, { ver: m.ver, t: m.t, hash: hs, dirty: sucio }); IDB.set('wsync:' + key, { ver: m.ver, t: m.t, hash: hs });
+    if (typeof campoSync === 'function') { CAMPO.key = ''; campoSync(); } refresh(); entregPublicar?.();
+  } finally { WSYNC.aplicando = false; }
+  if (sucio) wsSchedule(1500); return true; }
+async function wsWatch() { if (!USR.db || !SESSION) return; const key = WS_KEY; if (WSYNC.key === key && WSYNC.unsub) return; wsStop(); WSYNC.key = key;
+  const loc = (await IDB.get('wsync:' + key)) || {}; WSYNC.ver = loc.ver || ''; WSYNC.t = loc.t || ''; WSYNC.hash = loc.hash || '';
+  try { WSYNC.unsub = USR.db.collection('wsman').doc(wsMan(key)).onSnapshot(async s => { if (key !== WS_KEY || !SESSION) return;
+      if (!s.exists) { if (!WSYNC.listo) { WSYNC.listo = true; if (!esInv(SESSION)) { WSYNC.dirty = true; wsSchedule(1200); } } return; }
+      const m = s.data(); if (m.ver === WSYNC.ver) { if (!WSYNC.listo) { WSYNC.listo = true; if (WSYNC.dirty) wsSchedule(); } return; }
+      if (WSYNC.t && String(m.t) <= String(WSYNC.t)) { WSYNC.listo = true; if (WSYNC.dirty) wsSchedule(1200); return; }
+      try { const ok = await wsPull(key, m); WSYNC.listo = true; if (ok) toast(m.dev && m.dev !== SEG.dev?.id ? `Avances actualizados desde otro ordenador (${m.nombre || m.user || ''}, ${segHace(m.t)})` : 'Base de trabajo actualizada desde la nube', 'ok', 5000); }
+      catch (e) { console.warn('wsPull', e); WSYNC.listo = true; } }, () => { }); } catch (e) { console.warn('wsWatch', e); } }
 
 /* ---------- Eventos globales ---------- */
 document.addEventListener('click', async e => {
@@ -5154,7 +5198,7 @@ function bienvenida(u) { document.querySelector('.bv-toast')?.remove(); const d 
   document.body.appendChild(d); const fuera = () => { d.classList.add('out'); setTimeout(() => d.remove(), 320); }; d.querySelector('.bv-x').onclick = fuera; setTimeout(fuera, 5000); }
 /* Menú de usuario (avatar): cerrar sesión, cambiar usuario y cambiar clave */
 function loginHint() { const el = $('.login-hint'); if (el) el.hidden = true; } /* la clave inicial no se muestra en la portada */
-function logout(cambiar) { loginHint(); $('#usrMenu').hidden = true; $('#bellMenu').hidden = true; SESSION = null; segPresencia(); segBell(); try { sessionStorage.removeItem('sigisac-sess'); sessionStorage.removeItem('sigisac.tok'); } catch (e) { } if (typeof SRV !== 'undefined') SRV.token = ''; $('#login').hidden = false; $('#lg-pass').value = ''; $('#lg-err').textContent = ''; if (cambiar) { $('#lg-user').value = ''; setTimeout(() => $('#lg-user').focus(), 50); } else setTimeout(() => $('#lg-pass').focus(), 50); }
+function logout(cambiar) { wsStop(); loginHint(); $('#usrMenu').hidden = true; $('#bellMenu').hidden = true; SESSION = null; segPresencia(); segBell(); try { sessionStorage.removeItem('sigisac-sess'); sessionStorage.removeItem('sigisac.tok'); } catch (e) { } if (typeof SRV !== 'undefined') SRV.token = ''; $('#login').hidden = false; $('#lg-pass').value = ''; $('#lg-err').textContent = ''; if (cambiar) { $('#lg-user').value = ''; setTimeout(() => $('#lg-user').focus(), 50); } else setTimeout(() => $('#lg-pass').focus(), 50); }
 function usrMenu() { const u = SESSION || {}, m = $('#usrMenu');
   m.innerHTML = `<div class="um-h"><span class="um-av">${h($('#avatar').textContent)}</span><div><b>${h(u.nombre || u.user || '')}</b><span>${h(u.user || '')}${u.cargo ? ' · ' + h(u.cargo) : ''}</span></div></div>
     <button class="um-i" data-um="clave">${ic('key-round')}<span><b>Cambiar clave</b><small>Actualice la contraseña de su usuario</small></span></button>
