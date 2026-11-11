@@ -3596,6 +3596,7 @@ function campoAplicar(list) { let n = 0, quien = new Set(); const idx = invMap()
   const corte = String(S.cfg.campoReset?.t || '');
   for (const r of list) { if (!r?.cod || !r.verifT || String(r.verifT) <= corte) continue; const i = idx.get(r.cod)?.[0], loc = i != null ? S.inv[i] : null;
     if (loc && String(loc.verifT || '') >= String(r.verifT)) continue;
+    if (r.del) { if (loc) { S.inv.splice(i, 1); idx.delete(r.cod); n++; if (r.user !== SESSION?.user || r.dev !== SEG.dev?.id) quien.add(r.verifU || r.user); } continue; } /* registro eliminado en otro ordenador */
     const b = { ...(loc || {}), cod: r.cod }; CAMPO_K.forEach(k => { if (r[k] != null) b[k] = r[k]; }); try { enrich(b); } catch (e) { }
     if (loc) S.inv[i] = b; else S.inv.push(b); n++; if (r.user !== SESSION?.user || r.dev !== SEG.dev?.id) quien.add(r.verifU || r.user); }
   if (!n) return; invalidate(); mutate(`Campo: ${n} registro(s) recibidos de los grupos de inventario`);
@@ -4674,7 +4675,7 @@ VIEWS.campo = { cur: null, render(el) {
   const tl = () => { $('#areaTools').innerHTML = `<div class="act" style="--c:var(${m.c})">${tools('porArea', val('c-dep'))}</div>`; $('#respTools').innerHTML = `<div class="act" style="--c:var(${m.c})">${tools('anexo07', val('c-resp'))}</div>`; a7Form(); }; tl();
   el.onchange = e => { if (e.target.id === 'c-dep') { VIEWS.campo.dep = e.target.value; tl(); } if (e.target.id === 'c-resp') { VIEWS.campo.resp = e.target.value; tl(); } if (/^a7-/.test(e.target.id)) a7Save(); };
   $('#fSearch').onsubmit = e => { e.preventDefault(); VIEWS.campo.buscar(val('cp-q')); };
-  dataTable($('#tblRec'), { rows: recent, pageSize: 10, onRow: r => { $('#cp-q').value = r.cod; VIEWS.campo.buscar(r.cod); window.scrollTo({ top: 0, behavior: 'smooth' }); }, cols: [{ h: 'Código', k: 'cod', cls: 'mono' }, { h: 'Denominación', k: 'den' }, { h: 'Estado', k: 'estado', html: true, fn: r => estBadge(r.estado) }, { h: 'Dependencia', k: 'dep' }, { h: 'Responsable', k: 'resp' }, { h: 'Verificado', fn: r => fmtD(r.verif) }, { h: 'Cód. inventario', k: 'codInv', cls: 'mono', fn: r => r.codInv || '—' }, { h: 'Registrado por', fn: r => r.verifU || '' }] });
+  dataTable($('#tblRec'), { rows: recent, pageSize: 10, onRow: r => { $('#cp-q').value = r.cod; VIEWS.campo.buscar(r.cod); window.scrollTo({ top: 0, behavior: 'smooth' }); }, cols: [{ h: 'Código', k: 'cod', cls: 'mono' }, { h: 'Denominación', k: 'den' }, { h: 'Estado', k: 'estado', html: true, fn: r => estBadge(r.estado) }, { h: 'Dependencia', k: 'dep' }, { h: 'Responsable', k: 'resp' }, { h: 'Verificado', fn: r => fmtD(r.verif) }, { h: 'Cód. inventario', k: 'codInv', cls: 'mono', fn: r => r.codInv || '—' }, { h: 'Registrado por', fn: r => r.verifU || '' }, { h: 'Acciones', html: true, fn: r => `<div class="u-acc"><button class="icon-btn" data-a="recEdit" data-c="${h(r.cod)}" title="Editar registro" aria-label="Editar ${h(r.cod)}">${ic('pencil')}</button><button class="icon-btn u-del" data-a="recDel" data-c="${h(r.cod)}" title="Eliminar registro" aria-label="Eliminar ${h(r.cod)}">${ic('trash-2')}</button></div>` }] });
   if (VIEWS.campo.cur) VIEWS.campo.show(VIEWS.campo.cur);
 }, buscar(q) {
   const qq = String(q || '').trim(); const cod = /^S\/?C/i.test(qq) ? qq.toUpperCase() : IMP.codStr(qq.replace(/\D/g, '') || qq); if (!cod) return;
@@ -4705,6 +4706,15 @@ VIEWS.campo = { cur: null, render(el) {
     <div class="ficha-foot"><button class="sb sb-ghost" data-a="limpiar">${ic('x')}Limpiar</button><span class="ff-note"><span class="req">*</span> Todos los campos son obligatorios</span><button class="btn-glow ff-reg" data-a="registrar">${ic('check')}Registrar en inventario</button></div></div>`;
   setTimeout(() => $('#cp-res .ficha')?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
 }, act: {
+  recEdit(b) { const c = b.dataset.c; $('#cp-q').value = c; VIEWS.campo.buscar(c); window.scrollTo({ top: 0, behavior: 'smooth' }); toast('Registro abierto en la ficha: corrija los datos y pulse Registrar en inventario', 'info', 4500); },
+  recDel(b) { const c = b.dataset.c, x = S.inv.find(z => String(z.cod) === c); if (!x) return toast('El registro ya no existe', 'warn');
+    if (cerrado()) return toast('El inventario del periodo está CERRADO: no se puede eliminar el registro', 'warn');
+    modal('Eliminar registro de Campo', `<p>Se eliminará del inventario el bien <b class="mono">${h(c)}</b>:</p><div class="alert" style="--k:var(--bad)">${ic('package-minus')}<div><b>${h(x.den || '')}</b><br>${h(x.dep || 'Sin dependencia')} · ${h(x.resp || 'Sin responsable')} · ${estBadge(x.estado)}<br><small>Verificado ${fmtD(x.verif)}${x.verifU ? ' por ' + h(x.verifU) : ''}</small></div></div><p class="m-note">El bien vuelve a figurar como <b>por ubicar</b> y se retira de los reportes y del avance. También se elimina en los demás ordenadores de la entidad.</p>`,
+      `<button class="mini ghost" data-close>Cancelar</button><button class="mini danger" data-a="recDelOk" data-c="${h(c)}">${ic('trash-2')}Eliminar</button>`, { tone: 'bad', icon: 'trash-2' }); },
+  recDelOk(b) { const c = b.dataset.c, i = S.inv.findIndex(z => String(z.cod) === c); closeModal(); if (i < 0) return; const x = S.inv[i]; S.inv.splice(i, 1); if (VIEWS.campo.cur && String(VIEWS.campo.cur.cod) === c) VIEWS.campo.cur = null;
+    const key = campoEntKey(); if (USR.db && key) USR.db.collection('campo').doc(usrId(key + '~' + c).slice(0, 190)).set({ ent: key, cod: c, del: true, verifT: new Date().toISOString(), verifU: SESSION?.nombre || SESSION?.user || '', user: SESSION?.user || '', dev: SEG.dev?.id || '' }).catch(e => console.warn('campo', e));
+    invalidate(); mutate(`Registro de Campo eliminado: ${c} · ${x.den || ''}`); toast(`Registro eliminado: ${c}`, 'ok'); refresh(); },
+
   registrar() { if (cerrado()) return toast('El inventario del periodo está cerrado', 'bad'); if (!aperturado()) return avisoApertura(); const c = VIEWS.campo.cur; if (!c) return; const b = c.b;
     $$('#cp-res .field.req-err').forEach(f => f.classList.remove('req-err'));
     const vacios = CAMPO_REQ.filter(([k]) => !String(val('cf-' + k) ?? '').trim());
