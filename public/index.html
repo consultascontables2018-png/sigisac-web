@@ -1155,7 +1155,7 @@ header.top .menu-toggle{background:rgba(255,255,255,.14)!important;border-color:
 @keyframes bvIn{from{opacity:0;transform:translate(-50%,-24px)}to{opacity:1;transform:translate(-50%,0)}}
 @keyframes bvOut{to{opacity:0;transform:translate(-50%,-20px)}}
 .bv-ic .ic{width:22px;height:22px;stroke-width:2.4;color:#14532d}
-.bv-t{flex:1;display:grid;gap:1px}.bv-t b{font-weight:700;color:#052e16}.bv-t small{font-size:11.5px;color:#166534;opacity:.85}
+.bv-t{flex:1;display:grid;gap:1px}.bv-t b{font-weight:700;color:#052e16}.bv-t small{font-size:11.5px;color:#14532d;letter-spacing:.04em}.bv-t small b{font-weight:800;color:#14532d}
 .bv-x{border:0;background:transparent;cursor:pointer;color:#166534;padding:4px;border-radius:8px;display:grid;place-items:center}.bv-x:hover{background:rgba(255,255,255,.4)}.bv-x .ic{width:16px;height:16px}
 .bv-bar{position:absolute;left:0;bottom:0;height:3px;width:100%;background:#16a34a;transform-origin:left;animation:bvBar 5s linear forwards}
 @keyframes bvBar{to{transform:scaleX(0)}}
@@ -5118,7 +5118,7 @@ $('#loginForm').addEventListener('submit', async e => { e.preventDefault(); cons
   } finally { if (btn) btn.disabled = false; } });
 /* Aviso de bienvenida: parte superior central, al ingresar al sistema */
 function bienvenida(u) { document.querySelector('.bv-toast')?.remove(); const d = document.createElement('div'); d.className = 'bv-toast'; d.setAttribute('role', 'status');
-  d.innerHTML = `<span class="bv-ic">${ic('check')}</span><span class="bv-t"><span><b>¡Bienvenido!</b> Inicio de sesión exitoso.</span>${u?.nombre || u?.user ? `<small>${h(u.nombre || u.user)}</small>` : ''}</span><button class="bv-x" aria-label="Cerrar">${ic('x')}</button><i class="bv-bar"></i>`;
+  d.innerHTML = `<span class="bv-ic">${ic('check')}</span><span class="bv-t"><span><b>¡Bienvenido!</b> Inicio de sesión exitoso.</span><small><b>SIGISAC ERP PROFESIONAL</b></small></span><button class="bv-x" aria-label="Cerrar">${ic('x')}</button><i class="bv-bar"></i>`;
   document.body.appendChild(d); const fuera = () => { d.classList.add('out'); setTimeout(() => d.remove(), 320); }; d.querySelector('.bv-x').onclick = fuera; setTimeout(fuera, 5000); }
 /* Menú de usuario (avatar): cerrar sesión, cambiar usuario y cambiar clave */
 function loginHint() { const el = $('.login-hint'); if (el) el.hidden = true; } /* la clave inicial no se muestra en la portada */
