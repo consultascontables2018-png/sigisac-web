@@ -1289,7 +1289,7 @@ header.top .menu-toggle{background:rgba(255,255,255,.14)!important;border-color:
         <p class="lg-sub">Accede a tu cuenta para gestionar el inventario patrimonial, el saneamiento contable y la migración al SIGA MP.</p>
         <div class="lg-field"><input id="lg-user" value="" autocomplete="off" autocapitalize="off" spellcheck="false" readonly placeholder=" " required><label for="lg-user"><svg class="ic"><use href="#i-user-round"/></svg>Usuario, DNI o correo</label></div>
         <div class="lg-field"><input id="lg-pass" type="password" value="" autocomplete="new-password" readonly placeholder=" "><label for="lg-pass"><svg class="ic"><use href="#i-lock-keyhole"/></svg>Contraseña</label><button type="button" class="lg-eye" id="lgEye" aria-label="Mostrar contraseña"><svg class="ic"><use href="#i-eye"/></svg></button></div>
-        <div class="lg-row"><span></span><button type="button" class="lg-link" id="lgOlvido">¿Olvidaste tu contraseña?</button></div>
+        <div class="lg-row"><label class="lg-rem"><input type="checkbox" id="lg-rem">Recordarme</label><button type="button" class="lg-link" id="lgOlvido">¿Olvidaste tu contraseña?</button></div>
         <div class="err" id="lg-err"></div><div class="lg-db" id="lgDb" hidden></div>
         <div class="lg-btns"><button class="lg-go" type="submit"><span>Iniciar sesión</span><svg class="ic"><use href="#i-arrow-right"/></svg></button></div>
         <div class="login-hint" hidden></div>
@@ -5436,6 +5436,7 @@ $('#loginForm').addEventListener('submit', async e => { e.preventDefault(); cons
       if (j) usrSrvAuto(); }
     if (!usr) { $('#lg-err').textContent = !cands.length && !USR.db && !SRV.ok && /^https?:$/.test(location.protocol) ? 'Usuario no encontrado en este dispositivo: este sitio no tiene activa la base compartida, por eso no reconoce usuarios creados en otros dispositivos. El administrador debe publicar SIGISAC con su base (GitHub o Netlify CLI) o importar los usuarios en Autorización.' : 'Usuario o contraseña incorrectos.'; return; }
     const neg = await segIngreso(usr); if (neg) { $('#lg-err').textContent = neg; return; }
+    try { if ($('#lg-rem')?.checked) localStorage.setItem('sigisac.recordar', u); else localStorage.removeItem('sigisac.recordar'); } catch (e) { } /* solo el usuario, nunca la clave */
     await startSession(usr); log('Inicio de sesión: ' + usr.user); bienvenida(usr);
   } finally { if (btn) btn.disabled = false; } });
 /* Aviso de bienvenida: parte superior central, al ingresar al sistema */
@@ -5484,10 +5485,11 @@ $('#lgMovil')?.addEventListener('click', () => lectorOpen());
   hola(); setInterval(hola, 60000);
   /* Portada limpia en cualquier equipo: ni usuario ni clave precargados (solo el usuario si la persona marcó «Recordarme» en este equipo).
      Los campos quedan de solo lectura hasta que se tocan, así el navegador no los autocompleta por su cuenta. */
-  /* Los campos siempre empiezan vacíos en cualquier equipo: no se precarga usuario ni clave (se borra lo recordado antes) */
-  try { localStorage.removeItem('sigisac.recordar'); } catch (e) { }
+  /* La clave nunca se precarga. El usuario solo se recuerda en este equipo si la persona marcó «Recordarme» */
+  const recordado = () => { try { return localStorage.getItem('sigisac.recordar') || ''; } catch (e) { return ''; } };
+  if ($('#lg-rem')) $('#lg-rem').checked = !!recordado();
   let escribio = false; ['keydown', 'paste', 'input'].forEach(ev => $('#loginForm').addEventListener(ev, e => { if (e.isTrusted && (ev !== 'input' || e.inputType)) escribio = true; }, true));
-  const limpiar = () => { if (escribio) return; const u = $('#lg-user'), p = $('#lg-pass'); if (document.activeElement !== u) u.value = ''; if (document.activeElement !== p) p.value = ''; };
+  const limpiar = () => { if (escribio) return; const u = $('#lg-user'), p = $('#lg-pass'); if (document.activeElement !== u) u.value = recordado(); if (document.activeElement !== p) p.value = ''; if ($('#lg-rem')) $('#lg-rem').checked = !!recordado(); };
   ['#lg-user', '#lg-pass'].forEach(sel => { const i = $(sel); if (!i) return; const abrir = () => i.removeAttribute('readonly'); i.addEventListener('focus', abrir); i.addEventListener('pointerdown', abrir); i.addEventListener('keydown', abrir); });
   limpiar(); [150, 600, 1500, 3000, 5000].forEach(ms => setTimeout(limpiar, ms));
   new MutationObserver(() => { if (!$('#login').hidden) { escribio = false; limpiar(); [300, 1500].forEach(ms => setTimeout(limpiar, ms)); $('#lg-user').setAttribute('readonly', ''); $('#lg-pass').setAttribute('readonly', ''); } }).observe($('#login'), { attributes: true, attributeFilter: ['hidden'] });
