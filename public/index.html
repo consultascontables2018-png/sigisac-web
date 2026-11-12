@@ -3269,9 +3269,19 @@ const usrRol = u => u.modulos?.includes('Todos') && /Administrador/i.test(u.carg
    pocos segundos), así usuarios, claves, alertas, mensajes, ingresos, entidades y Campo se comparten entre dispositivos. */
 /* ---- Sesión con la base central de Netlify (/api/ws): token firmado por el servidor; vive solo en esta pestaña ---- */
 const NET = { tok: '', exp: 0, user: '' };
+/* Base central única: todos los enlaces de SIGISAC (segisacerp, sigisacerp u otro dominio) usan la misma base central,
+   la del sitio enlazado a GitHub. Así nunca hay dos bases distintas y un sitio sin funciones no queda «solo en este equipo». */
+const CENTRAL = (window.SIGISAC_CENTRAL || 'https://segisacerp.netlify.app').replace(/\/$/, '');
+const API_RUTAS = (() => { const L = []; const add = (db, ws) => { if (!L.some(x => x.db === db)) L.push({ db, ws }); };
+  let co = ''; try { co = new URL(CENTRAL).origin; } catch (e) { }
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname) && !window.SIGISAC_CENTRAL;
+  if (local || location.origin === co) add('/api/db', '/api/ws'); else if (co) add(co + '/api/db', co + '/api/ws');
+  add('/api/db', '/api/ws'); add('/.netlify/functions/db', '/.netlify/functions/ws'); if (co) add(co + '/.netlify/functions/db', co + '/.netlify/functions/ws');
+  return L; })();
+NET.ruta = API_RUTAS[0];
 try { const t = JSON.parse(sessionStorage.getItem('sigisac.net') || 'null'); if (t?.tok && t.exp > Date.now()) Object.assign(NET, t); } catch (e) { }
 function netGuardarTok() { try { NET.tok ? sessionStorage.setItem('sigisac.net', JSON.stringify(NET)) : sessionStorage.removeItem('sigisac.net'); } catch (e) { } }
-async function netApi(method, q, body, texto) { const url = '/api/ws' + (q ? '?' + new URLSearchParams(q) : ''); let r;
+async function netApi(method, q, body, texto) { const url = NET.ruta.ws + (q ? '?' + new URLSearchParams(q) : ''); let r;
   try { r = await fetch(url, { method, cache: 'no-store', headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(NET.tok ? { Authorization: 'Bearer ' + NET.tok } : {}) }, body: body ? JSON.stringify(body) : undefined }); }
   catch (e) { const er = new Error('sin conexión con el servidor'); er.status = 0; throw er; }
   if (!r.ok) { let j = {}; try { j = await r.json(); } catch (e) { } const er = new Error(j.error || 'HTTP ' + r.status); er.status = r.status; er.body = j; throw er; }
@@ -3280,12 +3290,15 @@ async function netLogin(user, pass) { try { const j = await netApi('POST', null,
   catch (e) { return { ok: false, status: e.status, error: e.message }; } }
 async function netDb() {
   if (!/^https?:$/.test(location.protocol)) return null;
-  const API = '/api/db';
-  var ping = null; for (const ms of [6000, 12000]) { /* el primer llamado al servidor puede tardar (arranque en frío): se reintenta con más espera */
-    try { const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), ms); const r = await fetch(API + '?c=_ping', { signal: ctl.signal, cache: 'no-store' }); clearTimeout(tm);
-      if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) { USR.dbErr = r.ok ? 'el sitio respondió sin la función de base central (/api/db)' : `el servidor respondió con error HTTP ${r.status}`; return null; } /* este sitio no tiene base central */
-      ping = await r.json(); if (!ping || ping.sigisac !== 1) { USR.dbErr = 'respuesta no reconocida de /api/db'; return null; } USR.dbErr = ''; break; } catch (e) { ping = null; USR.dbErr = 'el servidor no respondió a tiempo'; } }
-  if (!ping) return null;
+  var ping = null, errs = []; /* se prueba la base central única y, si no responde, las rutas alternativas */
+  for (const ruta of API_RUTAS) { for (const ms of [8000, 14000]) { /* el primer llamado puede tardar (arranque en frío): se reintenta con más espera */
+      try { const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), ms); const r = await fetch(ruta.db + '?c=_ping', { signal: ctl.signal, cache: 'no-store' }); clearTimeout(tm);
+        if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) { errs.push(`${ruta.db.replace(/^https?:\/\//, '')}: HTTP ${r.status}`); break; }
+        const j = await r.json(); if (j?.sigisac === 1) { ping = j; NET.ruta = ruta; } else errs.push(ruta.db + ': respuesta no reconocida'); break; }
+      catch (e) { if (ms === 14000) errs.push(`${ruta.db.replace(/^https?:\/\//, '')}: sin respuesta`); } }
+    if (ping) break; }
+  if (!ping) { USR.dbErr = errs.slice(0, 2).join(' · '); return null; } USR.dbErr = '';
+  const API = NET.ruta.db;
   const AUTH = () => NET.tok ? { Authorization: 'Bearer ' + NET.tok } : {};
   const C = new Map(), subs = new Set(); let timer = null;
   const col = c => C.get(c) || (C.set(c, { v: -1, docs: {} }), C.get(c));

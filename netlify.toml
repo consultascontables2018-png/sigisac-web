@@ -13,3 +13,14 @@
     Cache-Control = "no-cache, must-revalidate"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
+
+# Respaldo de rutas: /api/db y /api/ws también llegan a las funciones aunque el sitio no registre sus rutas propias
+[[redirects]]
+  from = "/api/db"
+  to = "/.netlify/functions/db"
+  status = 200
+
+[[redirects]]
+  from = "/api/ws"
+  to = "/.netlify/functions/ws"
+  status = 200

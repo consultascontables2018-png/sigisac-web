@@ -103,7 +103,7 @@ function visible(c, d, s, g) {
 }
 function sinClave(u) { const { clave, ...r } = u || {}; return r; }
 
-export default async (req) => {
+async function manejar(req) {
   const store = getStore({ name: "sigisac-db", consistency: "strong" });
   const url = new URL(req.url);
   if (req.method === "GET") {
@@ -144,7 +144,7 @@ export default async (req) => {
     return res({ error: "conflicto de escritura, reintente" }, 409);
   }
   return res({ error: "método no permitido" }, 405);
-};
+}
 
 /* Devuelve "" si se permite, un texto con el motivo si se rechaza, o el documento corregido que se debe guardar */
 function permiso(c, op, id, data, prev, s) {
@@ -170,3 +170,12 @@ function permiso(c, op, id, data, prev, s) {
   if (c === "alertas") return data;
   return { ...data, user: g.has(data.user) ? data.user : s.user };
 }
+
+/* CORS: los demás enlaces de SIGISAC (p. ej. sigisacerp.netlify.app o su dominio propio) usan esta misma base central.
+   Solo se aceptan orígenes de SIGISAC; la información sigue protegida por la sesión firmada de cada usuario. */
+const ORIGEN_OK = /^https:\/\/([a-z0-9-]+\.)*(netlify\.app|demosigisac\.com|sigisac\.com|sigisacerp\.com)$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+function conCors(req, r) { const o = req.headers.get("origin"); if (o && ORIGEN_OK.test(o)) { const h = new Headers(r.headers);
+    h.set("Access-Control-Allow-Origin", o); h.set("Vary", "Origin"); h.set("Access-Control-Allow-Headers", "Authorization, Content-Type"); h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS"); h.set("Access-Control-Max-Age", "86400");
+    return new Response(r.body, { status: r.status, headers: h }); } return r; }
+export default async (req) => req.method === "OPTIONS" ? conCors(req, new Response(null, { status: 204 })) : conCors(req, await manejar(req));
+export const config = { path: "/api/db" };

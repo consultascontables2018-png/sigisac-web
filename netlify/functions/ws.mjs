@@ -115,7 +115,7 @@ async function migrarLegado(ws) {
   return hist.length;
 }
 
-export default async (req) => {
+async function manejar(req) {
   const url = new URL(req.url);
   try {
     if (req.method === "POST") {
@@ -156,5 +156,12 @@ export default async (req) => {
     }
     return res({ error: "método no permitido" }, 405);
   } catch (e) { console.error(e); return res({ error: "Error del servidor: " + (e?.message || e) }, 500); }
-};
+}
+/* CORS: los demás enlaces de SIGISAC (p. ej. sigisacerp.netlify.app o su dominio propio) usan esta misma base central.
+   Solo se aceptan orígenes de SIGISAC; la información sigue protegida por la sesión firmada de cada usuario. */
+const ORIGEN_OK = /^https:\/\/([a-z0-9-]+\.)*(netlify\.app|demosigisac\.com|sigisac\.com|sigisacerp\.com)$|^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
+function conCors(req, r) { const o = req.headers.get("origin"); if (o && ORIGEN_OK.test(o)) { const h = new Headers(r.headers);
+    h.set("Access-Control-Allow-Origin", o); h.set("Vary", "Origin"); h.set("Access-Control-Allow-Headers", "Authorization, Content-Type"); h.set("Access-Control-Allow-Methods", "GET, POST, OPTIONS"); h.set("Access-Control-Max-Age", "86400");
+    return new Response(r.body, { status: r.status, headers: h }); } return r; }
+export default async (req) => req.method === "OPTIONS" ? conCors(req, new Response(null, { status: 204 })) : conCors(req, await manejar(req));
 export const config = { path: "/api/ws" };
