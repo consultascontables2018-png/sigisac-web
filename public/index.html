@@ -2068,7 +2068,7 @@ const IMP = (() => {
   }
 
   const up = v => ENG.norm(v);
-  const ctaFix = c => { c = String(c ?? '').trim(); return /^\d{10}$/.test(c) ? c.slice(0, 4) + '.' + c.slice(4) : c; };
+  const ctaFix = c => { c = String(c ?? '').trim(); return /^(1503|1501|1502|1504|1505|1506|1507|1508|9105|9106|9101|9102)\d{2,8}$/.test(c) || /^\d{10}$/.test(c) ? c.slice(0, 4) + '.' + c.slice(4) : c; }; // 1503020101 → 1503.020101 · 91050301 → 9105.0301
   function findHeader(rows, re) { for (let i = 0; i < Math.min(rows.length, 30); i++) if ((rows[i] || []).some(c => re.test(up(c)))) return i; return -1; }
 
   /* Formato migración SIGA MP (54 columnas + extras) */
@@ -2130,8 +2130,13 @@ const IMP = (() => {
       const dos = h2raw.some(x => /^(DENOMINACION|MARCA|MODELO|TIPO|COLOR|SERIE|DIMENSIONES?)$/.test(x)) && !h2raw.some(x => /^\d{8,}$/.test(x));
       const h2 = dos ? h2raw : [], n = Math.max(h1.length, h2.length);
       const col = {}, set = (k, i) => { if (col[k] == null) col[k] = i; };
+      /* formato ANÁLISIS (CUENTA CONTABLE 1503): grupos combinados REGISTRO PATRIMONIAL / REGISTRO CONTABLE (VALOR · CUENTA).
+         Del archivo se toma solo hasta REGISTRO PATRIMONIAL (valor y cuenta); registro contable, corrección y SIAF los completa el analista */
+      const grp = [], fmtAn = h1.some(x => /REGISTRO PATRIMONIAL/.test(x)); { let last = ''; for (let i = 0; i < n; i++) { if (h1[i]) last = h1[i]; grp[i] = h1[i] || (dos && h2[i] ? last : ''); } }
       for (let i = 0; i < n; i++) {
-        const a = h1[i] || '', b = h2[i] || '', t = (b || a);
+        const a = h1[i] || '', b = h2[i] || '', t = (b || a), g = grp[i] || '';
+        if (dos && /REGISTRO PATRIMONIAL/.test(g)) { if (/VALOR/.test(b)) set('valor', i); else if (/CUENTA/.test(b)) set('cta', i); continue; }
+        if (fmtAn && (/REGISTRO CONTABLE/.test(g) || /CORRECCION/.test(a) || /^SIAF\b/.test(a))) continue;
         // SINABIP: condición del bien (ACTIVO / BAJA), fecha y resolución de baja
         if (/^(COND|CONDICION)( DEL)?( BIEN)?$|CONDICION (DEL )?(BIEN|REGISTRO)|ESTADO (DEL )?(REGISTRO|ACTIVO)|^ACTIVO$|^FLAG ACTIVO$|SITUACION (DEL )?REGISTRO/.test(a)) { set('cond', i); continue; }
         if (/FEC(HA)? (DE )?BAJA/.test(a)) { set('fbaja', i); continue; }
