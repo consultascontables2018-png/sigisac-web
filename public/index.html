@@ -5111,8 +5111,9 @@ VIEWS.procesar = { render(el) {
       const rows = (sg ? sg.rows.map(bienFromBase) : iv.rows).map(x => enrich({ ...x, verif: todayISO(), fuente: 'SANEAMIENTO' }));
       if (!rows.length) throw new Error('El archivo no tiene bienes.');
       VIEWS.procesar.sel = null; VIEWS.procesar.pend = { rows, nombre: f.name };
-      modal('Importar inventario valorizado', `<p>Se leyeron <b>${fmtI(rows.length)}</b> bienes de <b>${h(f.name)}</b>.</p><div class="alert" style="--k:var(--c-san)">${ic('info')}<div>El archivo se usa solo en <b>Saneamiento contable 1503</b> (Procesar, Análisis, Corrección, Reclasificación, Depuración, Notas y Conciliación). <b>No modifica el inventario de los usuarios</b> ni otros módulos.</div></div>`, `<button class="mini" data-a="sanAceptar">${ic('check')}Aceptar</button>`, { tone: 'info', icon: 'upload' });
+      modal('Importar inventario valorizado', `<p>Se leyeron <b>${fmtI(rows.length)}</b> bienes de <b>${h(f.name)}</b>.</p><div class="alert" style="--k:var(--c-san)">${ic('info')}<div>El archivo se usa solo en <b>Saneamiento contable 1503</b> (Procesar, Análisis, Corrección, Reclasificación, Depuración, Notas y Conciliación). <b>No modifica el inventario de los usuarios</b> ni otros módulos.</div></div>`, `<button class="mini ghost" data-a="sanCancelar">${ic('x')}Cancelar</button><button class="mini" data-a="sanAceptar">${ic('check')}Aceptar</button>`, { tone: 'info', icon: 'upload' });
     } catch (e) { toast(e.message, 'bad', 7000); } finally { b.disabled = false; } },
+  sanCancelar() { VIEWS.procesar.pend = null; closeModal(); toast('Importación cancelada: no se cargó ningún archivo', 'info'); },
   sanAceptar() { const p = VIEWS.procesar.pend; closeModal(); if (!p) return; VIEWS.procesar.pend = null;
     S.inv = p.rows; S.sanArch = { nombre: p.nombre, fecha: new Date().toISOString(), n: p.rows.length }; invalidate();
     const n = autoCorrForce(); invalidate(); const ns = NOTAS();
