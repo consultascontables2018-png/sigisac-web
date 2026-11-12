@@ -3281,8 +3281,11 @@ async function netLogin(user, pass) { try { const j = await netApi('POST', null,
 async function netDb() {
   if (!/^https?:$/.test(location.protocol)) return null;
   const API = '/api/db';
-  try { const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 5000); const r = await fetch(API + '?c=_ping', { signal: ctl.signal, cache: 'no-store' }); clearTimeout(tm);
-    if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) return null; var ping = await r.json(); if (!ping || ping.sigisac !== 1) return null; } catch (e) { return null; }
+  var ping = null; for (const ms of [6000, 12000]) { /* el primer llamado al servidor puede tardar (arranque en frío): se reintenta con más espera */
+    try { const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), ms); const r = await fetch(API + '?c=_ping', { signal: ctl.signal, cache: 'no-store' }); clearTimeout(tm);
+      if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) return null; /* este sitio no tiene base central */
+      ping = await r.json(); if (!ping || ping.sigisac !== 1) return null; break; } catch (e) { ping = null; } }
+  if (!ping) return null;
   const AUTH = () => NET.tok ? { Authorization: 'Bearer ' + NET.tok } : {};
   const C = new Map(), subs = new Set(); let timer = null;
   const col = c => C.get(c) || (C.set(c, { v: -1, docs: {} }), C.get(c));
@@ -3321,6 +3324,12 @@ async function usrInit() {
   let db = null; try { db = await window.claude?.use?.('db'); } catch (e) { }
   if (!db) db = await netDb();
   USR.initDone = true; if (!db && SESSION) { wsEstado('local'); wsBienvenida(true); }
+  if (!db && /^https?:$/.test(location.protocol)) { USR.reint = (USR.reint || 0) + 1; if (USR.reint <= 20) setTimeout(usrReconectar, 30000); }
+  usrConectar(db); }
+/* Si la base central no respondió al abrir (sin conexión o servidor arrancando), se vuelve a intentar sola */
+async function usrReconectar() { if (USR.db) return; const db = await netDb(); if (!db) { if (++USR.reint <= 20) setTimeout(usrReconectar, 30000); return; }
+  usrConectar(db); toast('Base central conectada: sus datos se sincronizan en todos sus dispositivos', 'ok', 5000); }
+function usrConectar(db) {
   if (db) { USR.db = db; setTimeout(lgDbEstado, 0); setTimeout(() => { if (SESSION) wsWatch(); }, 0); try { USR.unsub = db.collection('usuarios').onSnapshot(s => usrApply(s).catch(console.error), () => { USR.ok = false; usrBadge(); }); } catch (e) { console.error(e); } }
   usrBadge(); }
 async function usrApply(snap) {
@@ -3381,8 +3390,11 @@ function usrEstado() {
   if (USR.db && USR.ok) return { on: true, t: 'Sincronización en tiempo real activa', d: USR.ro ? 'Su acceso es de solo lectura: ve los usuarios, pero solo el propietario o un editor puede registrarlos.' : 'Los usuarios, claves y módulos que registre aquí se reconocen al instante en cualquier otro ordenador que abra este SIGISAC.' };
   if (SRV.ok && SRV.token && USR.srvOk) return { on: true, t: 'Sincronizado con el servidor SIGISAC', d: 'Cada equipo de la red consulta el servidor cada 15 segundos y al iniciar sesión: los usuarios nuevos se reconocen automáticamente.' };
   if (SRV.ok && !SRV.token) return { on: false, t: 'Servidor SIGISAC disponible', d: 'Inicie sesión con un usuario del servidor para compartir los usuarios con los demás equipos.' };
-  if (USR.db) return { on: false, t: 'Conectando con la base compartida…', d: 'Los cambios se enviarán al reconectar.' };
-  return { on: false, t: 'Solo este equipo', d: 'Abra SIGISAC desde su enlace publicado o conéctelo al servidor SIGISAC para que los usuarios se reconozcan en otros ordenadores.' }; }
+  if (USR.db?.netlify && USR.db.auth && !NET.tok) return { on: false, t: 'Base central disponible: ingrese nuevamente', d: 'Cierre sesión e ingrese con su usuario y clave para activar la sincronización en tiempo real con todos sus dispositivos.' };
+  if (USR.db?.netlify && NET.tok && WSYNC.estado === 'ok') return { on: true, t: 'Base central activa · tiempo real', d: 'Sus usuarios, entidades y avances se guardan en la base central del sitio y se reconocen al instante en cualquier dispositivo, en cualquier momento.' };
+  if (USR.db) return { on: false, t: 'Conectando con la base central…', d: 'Los cambios se enviarán al reconectar.' };
+  if (!/^https?:$/.test(location.protocol)) return { on: false, t: 'Solo este equipo (archivo local)', d: 'Está abriendo SIGISAC como archivo en este ordenador. Ingrese desde el enlace publicado (segisacerp.netlify.app) para que los usuarios accedan desde cualquier dispositivo y en tiempo real.' };
+  return { on: false, t: 'Reconectando con la base central…', d: 'No se pudo conectar con la base central de este sitio; se reintenta automáticamente cada 30 segundos. Mientras tanto, los cambios se guardan en este equipo.' }; }
 function usrBadge() { const el = $('#usrSync'); if (!el) return; const e = usrEstado(), p = USERS.filter(u => u.pend).length;
   el.className = 'usr-sync ' + (e.on ? 'on' : 'off'); el.innerHTML = `<span class="dot"></span><div><b>${h(e.t)}</b><span>${h(e.d)}${p ? ` · ${p} cambio(s) pendiente(s) de enviar` : ''}${USR.last ? ` · actualizado ${USR.last.toLocaleTimeString('es-PE')}` : ''}</span></div>`; }
 
@@ -5264,6 +5276,7 @@ function wsEstado(e, msg = '') { WSYNC.estado = e; WSYNC.err = msg; const bar = 
     auth: ['warn', msg || 'Su sesión con la base central venció.', `<button class="mini" data-a="wsReingresar">${ic('log-in')}Ingresar nuevamente</button>`] }[e];
   bar.hidden = !T || !SESSION; if (T) { bar.className = 'ws-bar ' + T[0]; bar.innerHTML = `${e === 'cargando' ? '<i class="ws-spin"></i>' : ic(e === 'auth' ? 'key-round' : 'triangle-alert')}<span>${h(T[1])}</span>${T[2]}`; }
   const ch = $('#entLbl'); if (ch && e === 'cargando' && !S.cfg.entidad?.nombre) ch.textContent = 'Cargando entidades…';
+  if (typeof usrBadge === 'function') usrBadge();
   const dm = $('.side-foot .dim'); if (dm) dm.textContent = SESSION && USR.db && e !== 'auth' && e !== 'local' ? 'Sus datos se guardan en la base central y se sincronizan en todos sus dispositivos.' : 'Los datos viven en este navegador. Exporte respaldos en Configuración › Data.'; }
 function wsGuardado(txt, cls) { const el = $('#saveState'); if (el) { el.textContent = txt; el.className = 'save ' + cls; } }
 GLOBAL_ACT_EXTRA.wsReintentar = () => { wsStop(); wsWatch(); };
@@ -5421,7 +5434,9 @@ $('#loginForm').addEventListener('submit', async e => { e.preventDefault(); cons
   if (btn) btn.disabled = true; $('#lg-err').textContent = '';
   try { const msg = t => { $('#lg-err').innerHTML = `<span style="color:#1f2a44;font-weight:600">${t}</span>`; };
     if (!USR.initDone && USR.initP && /^https?:$/.test(location.protocol)) { msg('Conectando con la base central…'); await Promise.race([USR.initP, new Promise(r => setTimeout(r, 7000))]); $('#lg-err').textContent = ''; }
-    NET.err = ''; if (USR.db?.netlify && USR.db.auth) { msg('Verificando en la base central…'); const nr = await netLogin(u, p); $('#lg-err').textContent = '';
+    NET.err = ''; if (!USR.db && /^https?:$/.test(location.protocol) && !window.claude) { /* la base central no respondió al abrir: se intenta ingresar igual y se reconecta */
+      const nr = await netLogin(u, p); if (nr.ok) { await usrReconectar(); if (!USR.db) { NET.tok = ''; netGuardarTok(); } } }
+    if (USR.db?.netlify && USR.db.auth) { msg('Verificando en la base central…'); const nr = await netLogin(u, p); $('#lg-err').textContent = '';
       if (nr.ok) { const { inv, admin, ...pf } = nr.perfil; const i = USERS.findIndex(x => x.user === pf.user), nu = { ...(i >= 0 ? USERS[i] : {}), ...pf, pend: undefined }; if (!pf.clave) nu.clave = i >= 0 && USERS[i].clave ? USERS[i].clave : await claveHash(p); if (i >= 0) USERS[i] = nu; else USERS.push(nu); NET.ok = nu.user; mutate(); }
       else NET.err = nr.status === 401 ? 'Su usuario o clave no coinciden con la base central (o su usuario no está registrado allí). Lo que registre se guardará solo en este equipo.' : 'No se pudo conectar con la base central (' + (nr.error || 'sin conexión') + '). Lo que registre se guardará en este equipo.'; }
     const buscar = () => USERS.filter(x => x.user === u || (x.dni && x.dni === u) || (x.correo && x.correo.toLowerCase() === u.toLowerCase())); let cands = buscar(), usr = NET.ok ? USERS.find(x => x.user === NET.ok) || null : null; NET.ok = ''; /* validado por el servidor */
