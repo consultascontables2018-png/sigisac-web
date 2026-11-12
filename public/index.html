@@ -186,7 +186,8 @@ h1,h2,h3{margin:0}
 
 /* Tablas */
 .tbl-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
-.an-src{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+.an-src{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
+.an-sg{display:inline-flex;gap:6px;align-items:center}.an-sg .mini{margin-left:0}.an-del[disabled]{opacity:.45;cursor:not-allowed}
 .tbl-bar .input{flex:1;min-width:200px;max-width:420px}
 .tbl-wrap{overflow:auto;border-radius:12px;border:1px solid var(--line);max-height:560px;background:#fff}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -5159,6 +5160,9 @@ function anSrcParse(sheets) {
         M.set(c, o); }
       if (M.size) return { M, filas, hoja: sh.name, cols: { val: val >= 0, cta: cta >= 0, siaf: siaf >= 0 } }; } }
   return null; }
+/* campos del análisis que vienen de un reporte (k): se usan para «Eliminar» sin tocar lo escrito a mano ni lo del otro reporte */
+const anSrcCampos = (b, k) => { const a = b?.an; if (!a) return []; if (a.de) return ['cv', 'cc', 'siaf'].filter(f => a.de[f] === k); return a.src === k ? ['cv', 'cc', 'siaf'] : []; };
+const anSrcN = k => sanArr().filter(b => anSrcCampos(b, k).length).length;
 async function anSrcLeer(k, f) { const t = AN_SRC.find(x => x[0] === k)[1];
   try { toast(`Leyendo reporte ${t}: ${f.name}…`, 'info'); const p = anSrcParse(await IMP.readFile(f));
     if (!p) throw new Error(`No se reconoció el reporte ${t}. Debe tener una columna de CÓDIGO PATRIMONIAL y al menos una de VALOR, CUENTA o SIAF/EXPEDIENTE.`);
@@ -5177,7 +5181,7 @@ VIEWS.analisis = { pag: 0, q: '', render(el) {
   const m = M('analisis'), R = an1503Rows(), tPv = R.reduce((a, x) => a + x.pv, 0), tCv = R.reduce((a, x) => a + (+x.cv || 0), 0), nCorr = R.filter(x => x.corr).length;
   el.innerHTML = `<div style="--c:var(${m.c});display:grid;gap:18px">
   <div class="kpis">${kpi('Bienes analizados', fmtI(R.length), 'del inventario valorizado importado', '--c-san')}${kpi('Registro patrimonial', money(tPv))}${kpi('Registro contable', money(tCv))}${kpi('Registrados en contable', fmtI(R.filter(x => x.cv !== '').length), `de ${fmtI(R.length)} bienes`)}${kpi('Con corrección de cuenta', fmtI(nCorr), 'anotadas por el analista', nCorr ? '--warn' : '--ok')}</div>
-  ${card('Análisis de la cuenta contable 1503', 'chart-bar-big', R.length ? `<div class="tbl-bar"><label class="input sm">${ic('search')}<input type="search" id="an-q" placeholder="Buscar código, denominación, cuenta…" value="${h(VIEWS.analisis.q)}"></label><span class="muted" id="an-n"></span><span class="an-src">${AN_SRC.map(([k, t, i, c]) => `<label class="mini" style="--c:var(${c});cursor:pointer" title="Importe el reporte ${h(t)} (Excel o TXT): llena Registro contable (valor y cuenta) y SIAF por código patrimonial">${ic(i)}Reporte ${h(t)}<input type="file" data-ansrc="${k}" hidden accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv,.prn"></label>`).join('')}</span></div><div id="anTbl"></div>` : `<div class="alert" style="--k:var(--warn)">${ic('info')}<div>Aún no hay inventario valorizado. Impórtelo en <b>Procesar reporte patrimonial › Importar invent. valorizado › Cargar</b>: el análisis se arma solo.</div></div>`, '', R.length ? exportBar('analisis1503') : '')}</div>`;
+  ${card('Análisis de la cuenta contable 1503', 'chart-bar-big', R.length ? `<div class="tbl-bar"><label class="input sm">${ic('search')}<input type="search" id="an-q" placeholder="Buscar código, denominación, cuenta…" value="${h(VIEWS.analisis.q)}"></label><span class="muted" id="an-n"></span><span class="an-src">${AN_SRC.map(([k, t, i, c]) => `<span class="an-sg"><label class="mini" style="--c:var(${c});cursor:pointer" title="Importe el reporte ${h(t)} (Excel o TXT): llena Registro contable (valor y cuenta) y SIAF por código patrimonial">${ic(i)}Reporte ${h(t)}<input type="file" data-ansrc="${k}" hidden accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv,.prn"></label><button class="mini an-del" style="--c:var(--bad)" data-a="anSrcDel" data-k="${k}" ${anSrcN(k) ? '' : 'disabled'} title="${anSrcN(k) ? `Eliminar los datos importados del reporte ${h(t)} (${fmtI(anSrcN(k))} bienes)` : `No hay datos importados del reporte ${h(t)}`}">${ic('trash-2')}Eliminar</button></span>`).join('')}</span></div><div id="anTbl"></div>` : `<div class="alert" style="--k:var(--warn)">${ic('info')}<div>Aún no hay inventario valorizado. Impórtelo en <b>Procesar reporte patrimonial › Importar invent. valorizado › Cargar</b>: el análisis se arma solo.</div></div>`, '', R.length ? exportBar('analisis1503') : '')}</div>`;
   if (!R.length) return;
   const draw = () => { const R = an1503Rows(), q = ENG.norm(VIEWS.analisis.q || ''), L = q ? R.filter(x => ENG.norm([x.b.cod, x.b.den, x.b.marca, x.b.modelo, x.b.serie, x.pc, x.cc, x.corr, x.siaf].join(' ')).includes(q)) : R;
     const PS = 50, pages = Math.max(1, Math.ceil(L.length / PS)); VIEWS.analisis.pag = Math.min(VIEWS.analisis.pag, pages - 1); const pg = VIEWS.analisis.pag, sl = L.slice(pg * PS, pg * PS + PS);
@@ -5196,12 +5200,20 @@ VIEWS.analisis = { pag: 0, q: '', render(el) {
     const t = e.target.closest('.an-in'); if (!t) return; const b = S.inv.find(x => String(x.cod) === t.dataset.an); if (!b) return; const k = t.dataset.k; b.an = b.an || {};
     if (k === 'cv') { const tx = String(t.value).replace(/,/g, '').trim(); if (tx === '') { b.an.cv = ''; } else { const v = parseFloat(tx); if (!isFinite(v)) { toast('Ingrese un valor numérico', 'warn'); t.value = b.an.cv === '' || b.an.cv == null ? '' : fmtN(b.an.cv); return; } b.an.cv = Math.round(v * 100) / 100; t.value = fmtN(b.an.cv); } }
     else b.an[k] = t.value.trim().toUpperCase();
+    if (b.an.de) delete b.an.de[k]; /* escrito a mano: ya no pertenece a ningún reporte */
     t.closest('tr').classList.toggle('an-corr', !!b.an.corr); mutate(`Análisis 1503 · ${b.cod}: ${k === 'cv' ? 'valor contable' : k === 'cc' ? 'cuenta contable' : k === 'corr' ? 'corrección de cuenta' : 'SIAF'} actualizado`);
     if (k === 'cv') { const L = an1503Rows(), f = $('#anTbl tfoot td:nth-child(4) b'); if (f) f.textContent = fmtN(L.reduce((a, x) => a + (+x.cv || 0), 0)); } }; }, act: {
+  anSrcDel(bt) { const k = bt.dataset.k, t = AN_SRC.find(x => x[0] === k)[1], n = anSrcN(k); if (!n) return toast(`No hay datos importados del reporte ${t}`, 'info');
+    const ar = S.sanSrc?.[k];
+    modal(`Eliminar reporte ${t}`, `<p>Se quitarán los datos que llenó el reporte <b>${h(t)}</b>${ar ? ` (<b>${h(ar.nombre)}</b>)` : ''} en <b>${fmtI(n)}</b> bien(es) del análisis: valor contable, cuenta contable y/o SIAF.</p><div class="alert" style="--k:var(--warn)">${ic('info')}<div>Lo escrito a mano y lo importado del otro reporte se conserva. No modifica el inventario de los usuarios ni el inventario valorizado del saneamiento.</div></div>`,
+      `<button class="mini ghost" data-close>${ic('x')}Cancelar</button><button class="mini danger" data-a="anSrcDelOk" data-k="${k}">${ic('trash-2')}Eliminar</button>`, { tone: 'warn', icon: 'trash-2' }); },
+  anSrcDelOk(bt) { const k = bt.dataset.k, t = AN_SRC.find(x => x[0] === k)[1]; closeModal(); let n = 0;
+    sanArr().forEach(b => { const F = anSrcCampos(b, k); if (!F.length) return; F.forEach(f => { b.an[f] = ''; if (b.an.de) delete b.an.de[f]; }); if (b.an.src === k) delete b.an.src; n++; });
+    if (S.sanSrc) delete S.sanSrc[k]; mutate(`Análisis 1503: datos del reporte ${t} eliminados (${n} bienes)`); toast(`Reporte ${t} eliminado: ${fmtI(n)} bienes limpiados`, 'ok', 4500); refresh(); },
   anSrcCancelar() { VIEWS.analisis.srcPend = null; closeModal(); toast('Importación cancelada: el análisis no cambió', 'info'); },
   anSrcAceptar() { const P = VIEWS.analisis.srcPend; closeModal(); if (!P) return; VIEWS.analisis.srcPend = null; const { p } = P; let n = 0;
     sanArr().forEach(b => { const c = anCod(b.cod), o = p.M.get(c) || p.M.get(c.replace(/^0+/, '')); if (!o) return; b.an = b.an || {};
-      if (p.cols.val && o.hayV) b.an.cv = Math.round(o.cv * 100) / 100; if (p.cols.cta && o.cc) b.an.cc = o.cc; if (p.cols.siaf && o.siaf.length) b.an.siaf = o.siaf.join(' / ').toUpperCase(); b.an.src = P.k; n++; });
+      const de = b.an.de = b.an.de || {}; if (p.cols.val && o.hayV) { b.an.cv = Math.round(o.cv * 100) / 100; de.cv = P.k; } if (p.cols.cta && o.cc) { b.an.cc = o.cc; de.cc = P.k; } if (p.cols.siaf && o.siaf.length) { b.an.siaf = o.siaf.join(' / ').toUpperCase(); de.siaf = P.k; } b.an.src = P.k; n++; });
     S.sanSrc = { ...(S.sanSrc || {}), [P.k]: { nombre: P.nombre, fecha: new Date().toISOString(), n } };
     mutate(`Análisis 1503: reporte ${P.t} importado (${P.nombre}), ${n} bienes actualizados`); toast(`Reporte ${P.t}: ${fmtI(n)} bienes actualizados en Registro contable`, 'ok', 5000); refresh(); }
 } };
