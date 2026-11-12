@@ -136,6 +136,12 @@ h1,h2,h3{margin:0}
 .card-h{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .card-h h3{font-family:var(--f-display);font-size:15px;font-weight:600;flex:1;min-width:160px}
 .card-h>.ic{color:var(--c)}
+.inv-sv{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:12px;border:0;cursor:pointer;font:700 12.5px/1 var(--f-ui,inherit);letter-spacing:.02em;color:#fff;background:linear-gradient(135deg,#059669,#10b981 55%,#34d399);box-shadow:0 6px 16px -6px rgba(5,150,105,.55),inset 0 1px 0 rgba(255,255,255,.35);transition:transform .15s,box-shadow .15s,filter .15s}
+.inv-sv:hover{transform:translateY(-1px);box-shadow:0 10px 22px -8px rgba(5,150,105,.6),inset 0 1px 0 rgba(255,255,255,.35);filter:saturate(1.1)}
+.inv-sv:disabled{opacity:.7;cursor:progress;transform:none}
+.inv-sv .ic{width:16px;height:16px}
+.inv-sv-st{font-size:11.5px;color:var(--dim);font-weight:600;white-space:nowrap}
+.inv-sv-st b{color:#047857}
 .tag{font-size:10.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--dim);border:1px solid var(--line);padding:3px 8px;border-radius:99px;white-space:nowrap}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,210px),1fr));gap:12px}
 .kpi{border-radius:16px;padding:14px 16px;background:linear-gradient(180deg,#fff,color-mix(in srgb,var(--k,var(--c)) 7%,#fff));border:1px solid var(--line);position:relative;overflow:hidden;box-shadow:var(--shadow)}
@@ -4678,7 +4684,8 @@ VIEWS.campo = { cur: null, render(el) {
   ${campoKpis()}
   ${card('Búsqueda por código patrimonial', 'scan-barcode', `<form class="scan-bar" id="fSearch" autocomplete="off"><div class="scan-in">${ic('barcode')}<input id="cp-q" class="mono" placeholder="${h(MODOS[modoAct()].ph)}" inputmode="numeric" autofocus><kbd>Enter</kbd></div><div class="scan-btns"><button class="sb sb-search" type="submit">${ic('search')}Buscar</button>${modoSel()}<button class="sb sb-sc" type="button" data-a="sinCod">${ic('package-plus')}Bien sin código</button></div></form><p class="scan-hint" id="modoHint">${modoHint()}</p><input type="file" hidden id="camFoto" accept="image/*" capture="environment"><div id="cp-res" style="margin-top:16px"></div>`, MODOS[modoAct()].lbl)}
   <div class="grid2">${card('Inventario por área', 'layers', `${select('Dependencia', 'c-dep', dependencias().map(([d, n]) => [d, `${d} (${n})`]), VIEWS.campo.dep || dependencias()[0]?.[0], 'building-2')}<div id="areaTools" style="margin-top:12px"></div>`)}${card('Inventario individual · Anexo 07', 'id-card', `${select('Usuario / responsable', 'c-resp', responsables().map(([d, n]) => [d, `${d} (${n})`]), VIEWS.campo.resp || responsables()[0]?.[0], 'user-round')}<div id="a7Dat" class="a7-dat"></div><div id="respTools" style="margin-top:12px"></div>`)}</div>
-  ${card('Últimos bienes verificados', 'list-checks', '<div id="tblRec"></div>')}</div>`;
+  ${card('Últimos bienes verificados', 'list-checks', '<div id="tblRec"></div>', '', `<span class="inv-sv-st" id="invSvSt"></span><button class="inv-sv" data-a="invGuardar" title="Guarda de forma segura el trabajo registrado: en este navegador, como copia de seguridad y en la nube">${ic('save')}Guardar inventario</button>`)}</div>`;
+  invSvEstado();
   const tl = () => { $('#areaTools').innerHTML = `<div class="act" style="--c:var(${m.c})">${tools('porArea', val('c-dep'))}</div>`; $('#respTools').innerHTML = `<div class="act" style="--c:var(${m.c})">${tools('anexo07', val('c-resp'))}</div>`; a7Form(); }; tl();
   el.onchange = e => { if (e.target.id === 'c-dep') { VIEWS.campo.dep = e.target.value; tl(); } if (e.target.id === 'c-resp') { VIEWS.campo.resp = e.target.value; tl(); } if (/^a7-/.test(e.target.id)) a7Save(); };
   $('#fSearch').onsubmit = e => { e.preventDefault(); VIEWS.campo.buscar(val('cp-q')); };
@@ -5128,7 +5135,7 @@ async function wsPush() { if (!USR.db || !SESSION || esInv(SESSION) || WSYNC.apl
   try { const js = wsJson(), hs = await wsHash(js); if (hs === WSYNC.hash) { WSYNC.dirty = false; return; } /* sin cambios reales en la base de trabajo */
     const data = await wsGz(js), n = Math.ceil(data.length / WS_PARTE), ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 5), t = new Date().toISOString(), col = USR.db.collection(wsCol(key)), nb = wsCont(S), nom = wsNom(S);
     for (let i = 0; i < n; i++) await col.doc(ver + '_' + i).set({ ver, i, n, nb, t, nom, d: data.slice(i * WS_PARTE, (i + 1) * WS_PARTE) });
-    await USR.db.collection('wsman').doc(wsMan(key)).set({ ws: key, ver, n, t, nb, nom, dev: SEG.dev?.id || '', user: SESSION.user, nombre: SESSION.nombre || '', size: data.length });
+    WSYNC.pend = ver; await USR.db.collection('wsman').doc(wsMan(key)).set({ ws: key, ver, n, t, nb, nom, dev: SEG.dev?.id || '', user: SESSION.user, nombre: SESSION.nombre || '', size: data.length });
     Object.assign(WSYNC, { ver, t, dirty: false, hash: hs }); IDB.set('wsync:' + key, { ver, t, hash: hs });
     wsPodar(col, ver).catch(() => { }); /* las versiones anteriores se conservan como historial recuperable */
     const el = $('#saveState'); if (el) { el.textContent = 'Guardado y sincronizado en la nube'; el.className = 'save ok'; }
@@ -5154,7 +5161,7 @@ async function wsWatch() { wsDiario(); if (!USR.db || !SESSION) return; const ke
   const loc = (await IDB.get('wsync:' + key)) || {}; WSYNC.ver = loc.ver || ''; WSYNC.t = loc.t || ''; WSYNC.hash = loc.hash || '';
   try { WSYNC.unsub = USR.db.collection('wsman').doc(wsMan(key)).onSnapshot(async s => { if (key !== WS_KEY || !SESSION) return;
       if (!s.exists) { if (!WSYNC.listo) { WSYNC.listo = true; if (!esInv(SESSION)) { WSYNC.dirty = true; wsSchedule(1200); } } return; }
-      const m = s.data(); if (m.ver === WSYNC.ver) { if (!WSYNC.listo) { WSYNC.listo = true; if (WSYNC.dirty) wsSchedule(); } return; }
+      const m = s.data(); if (m.ver === WSYNC.pend && m.ver !== WSYNC.ver) return; if (m.ver === WSYNC.ver) { if (!WSYNC.listo) { WSYNC.listo = true; if (WSYNC.dirty) wsSchedule(); } return; }
       if (WSYNC.t && String(m.t) <= String(WSYNC.t)) { WSYNC.listo = true; if (WSYNC.dirty) wsSchedule(1200); return; }
       try { const ok = await wsPull(key, m); WSYNC.listo = true; if (ok === 'kept') return; if (ok) toast(m.dev && m.dev !== SEG.dev?.id ? `Avances actualizados desde otro ordenador (${m.nombre || m.user || ''}, ${segHace(m.t)})` : 'Base de trabajo actualizada desde la nube', 'ok', 5000); }
       catch (e) { console.warn('wsPull', e); WSYNC.listo = true; } }, () => { }); } catch (e) { console.warn('wsWatch', e); } }
@@ -5198,7 +5205,7 @@ async function wsCandidatos(key) { const out = [];
 async function wsAutoRecup(key) { try { const L = (await wsCandidatos(key)).filter(c => c.nb !== 0 && c.tipo !== 'local').sort((a, b) => String(b.t).localeCompare(String(a.t)));
   let k = 0; for (const c of L) if (c.nb == null && c.v && k++ < 8) { try { c.st = await wsBajar(key, c.v); c.nb = wsCont(c.st); c.nom = c.nom || wsNom(c.st); } catch (e) { c.nb = 0; } }
   const best = L.filter(c => c.nb > 0).sort((a, b) => b.nb - a.nb || String(b.t).localeCompare(String(a.t)))[0]; if (!best || wsCont(S) || WS_KEY !== key || !SESSION) return; WSREC.L = [best];
-  $('#modal').innerHTML = `<div class="m-card aviso" role="dialog" aria-modal="true" aria-labelledby="arT"><div class="av-ico">${ic('history')}</div><h3 id="arT">Encontramos su información guardada</h3><p>Su base de trabajo está vacía en este ordenador, pero hay una versión guardada el <b>${h(new Date(best.t).toLocaleString('es-PE'))}</b>${best.nom ? ` de <b>${h(best.nom)}</b>` : ''}${best.nb ? ` (${fmtI(best.nb)} registros)` : ''}.</p><p style="font-size:12.5px">Puede restaurarla ahora o revisar todas las versiones en Configuración › Data › Recuperar base de trabajo.</p>
+  $('#modal').innerHTML = `<div class="m-card aviso ok" role="dialog" aria-modal="true" aria-labelledby="arT"><div class="av-ico">${ic('history')}</div><h3 id="arT">Encontramos su información guardada</h3><p>Su base de trabajo está vacía en este ordenador, pero hay una versión guardada el <b>${h(new Date(best.t).toLocaleString('es-PE'))}</b>${best.nom ? ` de <b>${h(best.nom)}</b>` : ''}${best.nb ? ` (${fmtI(best.nb)} registros)` : ''}.</p><p style="font-size:12.5px">Puede restaurarla ahora o revisar todas las versiones en Configuración › Data › Recuperar base de trabajo.</p>
     <div class="av-btns"><button class="btn-glow" data-a="wsRecOk" data-i="0">${ic('rotate-ccw')}Restaurar</button><button class="mini" data-a="wsRecup">${ic('history')}Ver versiones</button><button class="mini ghost" data-close>${ic('x')}Ahora no</button></div></div>`; $('#modal').hidden = false; } catch (e) { console.warn('wsAutoRecup', e); } }
 GLOBAL_ACT_EXTRA.wsRecup = async () => { if (esInv(SESSION)) return toast('Su base la administra el usuario principal', 'warn');
   $('#modal').innerHTML = `<div class="m-card aviso" role="dialog" aria-modal="true"><div class="av-ico">${ic('history')}</div><h3>Buscando versiones guardadas…</h3></div>`; $('#modal').hidden = false;
@@ -5211,6 +5218,28 @@ GLOBAL_ACT_EXTRA.wsRecVer = async b => { const c = WSREC.L[+b.dataset.i]; if (!c
   $('#modal').innerHTML = `<div class="m-card aviso" role="alertdialog" aria-modal="true" aria-labelledby="rvT"><div class="av-ico">${ic('rotate-ccw')}</div><h3 id="rvT">Restaurar esta versión</h3><p>${c.t ? 'Guardada el <b>' + h(new Date(c.t).toLocaleString('es-PE')) + '</b>.' : h(c.origen || '')}</p><ul style="text-align:left;font-size:12.5px;margin:6px 0 10px;padding-left:18px">${wsRes(st)}</ul><p style="font-size:12.5px">La base actual se guardará como copia antes de restaurar.</p>
     <div class="av-btns"><button class="btn-glow" data-a="wsRecOk" data-i="${b.dataset.i}">${ic('rotate-ccw')}Restaurar</button><button class="mini ghost" data-a="wsRecup">${ic('arrow-left')}Volver</button></div></div>`; } catch (e) { toast(e.message, 'bad'); } };
 GLOBAL_ACT_EXTRA.wsRecOk = async b => { const c = WSREC.L[+b.dataset.i]; if (!c) return; try { const st = c.st || await wsBajar(WS_KEY, c.v); await wsRestaurar(st, c.t ? new Date(c.t).toLocaleString('es-PE') : (c.origen || 'copia')); } catch (e) { toast(e.message, 'bad'); } };
+
+
+/* ---------- Campo: Guardar inventario (guardado seguro manual) ----------
+   Guarda al instante el trabajo registrado: 1) en este navegador, 2) como copia de seguridad recuperable
+   (Configuración › Data › Recuperar base de trabajo) y 3) en la nube del sitio, para que ninguna actualización
+   de SIGISAC ni el cambio de ordenador haga perder lo trabajado en el día.                                       */
+async function invSvEstado() { const el = $('#invSvSt'); if (!el) return; const r = await IDB.get('invsave:' + WS_KEY); if (!$('#invSvSt')) return;
+  el.innerHTML = r?.t ? `Guardado: <b>${h(new Date(r.t).toLocaleString('es-PE', { day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }))}</b>${r.nube ? ' · nube' : ''}` : ''; }
+GLOBAL_ACT_EXTRA.invGuardar = async b => { if (b) b.disabled = true; const t = new Date().toISOString();
+  try { clearTimeout(saveTimer); const loc = await IDB.set(WS_KEY, S); await IDB.set('usuarios', USERS);
+    const nb = wsCont(S); if (nb) { const L = (await IDB.get('bak:' + WS_KEY)) || []; const { fam, cls, items, ...r } = S; L.unshift({ t, origen: 'Guardar inventario (Campo)', nb, nom: wsNom(S), st: S.catCustom ? S : r }); await IDB.set('bak:' + WS_KEY, L.slice(0, 8)); }
+    let nube = false, msgN = '';
+    if (USR.db && SESSION && !esInv(SESSION)) { const antes = WSYNC.ver; WSYNC.hash = ''; for (let i = 0; i < 20 && WSYNC.subiendo; i++) await new Promise(r => setTimeout(r, 300)); clearTimeout(WSYNC.timer); await wsPush(); nube = WSYNC.ver !== antes && !WSYNC.dirty; msgN = nube ? 'En la nube del sitio (disponible en cualquier ordenador)' : 'Nube: no se pudo subir ahora; se reintentará sola'; }
+    else if (USR.db && esInv(SESSION)) { nube = true; msgN = 'Sus verificaciones de Campo ya están publicadas para su usuario principal'; }
+    else msgN = 'Este sitio no tiene base compartida: descargue también un respaldo .json';
+    await IDB.set('invsave:' + WS_KEY, { t, nube }); log('Inventario guardado manualmente desde Campo'); invSvEstado();
+    const ver = (S.inv || []).filter(x => x.verifT || x.codInv).length;
+    $('#modal').innerHTML = `<div class="m-card aviso ok" role="dialog" aria-modal="true" aria-labelledby="isT"><div class="av-ico">${ic('circle-check')}</div><h3 id="isT">Inventario guardado</h3><p><b>${h(S.cfg.entidad?.nombre || 'Entidad')}</b> · ${fmtI(ver)} bienes verificados · ${fmtI((S.inv || []).length)} en inventario.</p>
+      <ul style="text-align:left;font-size:12.5px;margin:4px 0 10px;padding-left:18px;line-height:1.6"><li>${loc ? 'Guardado en este navegador' : 'Este navegador no permite guardar: descargue un respaldo'}</li><li>Copia de seguridad recuperable (Configuración › Data › Recuperar base de trabajo)</li><li>${h(msgN)}</li></ul>
+      <div class="av-btns"><button class="btn-glow" data-close>${ic('check')}Aceptar</button><button class="mini" data-a="invRespaldo">${ic('hard-drive-download')}Descargar respaldo .json</button></div></div>`; $('#modal').hidden = false;
+  } catch (e) { console.error(e); toast('No se pudo guardar: ' + e.message, 'bad'); } finally { if (b) b.disabled = false; } };
+GLOBAL_ACT_EXTRA.invRespaldo = () => { closeModal(); VIEWS.data.act.backup(); };
 
 /* ---------- Eventos globales ---------- */
 document.addEventListener('click', async e => {
