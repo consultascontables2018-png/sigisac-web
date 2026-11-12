@@ -52,7 +52,7 @@ function perfil(u) { return { ...u, ws: u.ws || wsDe(u.user), inv: esInv(u), adm
 async function ingresar(user, pass) {
   user = String(user || "").trim(); if (!user || !pass) return null; const docs = await usuarios();
   let cands = Object.values(docs).filter(x => x && (x.user === user || (x.dni && x.dni === user) || (x.correo && x.correo.toLowerCase() === user.toLowerCase())));
-  for (const u of cands) if (!u.bloq && await claveOk(pass, u.clave)) return perfil(u);
+  for (const u of cands) if (await claveOk(pass, u.clave)) return u.bloq ? { bloqueado: true } : perfil(u);
   if (user === "admin" && !adminDe(docs) && pass === ADMIN0_PASS) return perfil(await crearAdmin(pass));
   return null;
 }
@@ -154,9 +154,10 @@ function permiso(c, op, id, data, prev, s) {
     const keep = x => nuevo && !nuevo.clave && prev?.clave ? { ...x, clave: prev.clave } : x; // la lista llega sin claves: nunca se borra una clave
     if (s.admin) return op === "del" ? (prev?.user === "admin" ? "No se puede eliminar al administrador" : "") : keep(nuevo);
     if (id === usrId(s.user)) { if (op === "del") return "No puede eliminar su propio usuario";
-      const fijo = ["user", "modulos", "tipo", "padre", "ws", "plan", "bloq", "def", "cargo", "libre", "srv"]; const out = { ...nuevo }; fijo.forEach(k => { if (prev && k in prev) out[k] = prev[k]; else delete out[k]; });
+      const fijo = ["user", "modulos", "tipo", "padre", "ws", "plan", "bloq", "def", "cargo", "libre", "srv", "invEquipo"]; const out = { ...nuevo }; fijo.forEach(k => { if (prev && k in prev) out[k] = prev[k]; else delete out[k]; });
       out.user = s.user; return keep(out); }
-    if (!s.inv) { const mio = x => x && x.tipo === "inventario" && x.padre === s.user;
+    if (!s.inv) { if (!s.invEquipo) return "Su usuario no está autorizado para registrar inventariadores (Autorización › Usuario principal)";
+      const mio = x => x && x.tipo === "inventario" && x.padre === s.user;
       if (prev && !mio(prev)) return "Solo puede administrar sus propios usuarios de inventario";
       if (op === "del") return prev ? "" : "No existe";
       if (!mio(nuevo)) return "Solo puede crear usuarios de inventario a su cargo";

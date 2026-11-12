@@ -52,7 +52,7 @@ function perfil(u) { return { ...u, ws: u.ws || wsDe(u.user), inv: esInv(u), adm
 async function ingresar(user, pass) {
   user = String(user || "").trim(); if (!user || !pass) return null; const docs = await usuarios();
   let cands = Object.values(docs).filter(x => x && (x.user === user || (x.dni && x.dni === user) || (x.correo && x.correo.toLowerCase() === user.toLowerCase())));
-  for (const u of cands) if (!u.bloq && await claveOk(pass, u.clave)) return perfil(u);
+  for (const u of cands) if (await claveOk(pass, u.clave)) return u.bloq ? { bloqueado: true } : perfil(u);
   if (user === "admin" && !adminDe(docs) && pass === ADMIN0_PASS) return perfil(await crearAdmin(pass));
   return null;
 }
@@ -122,6 +122,7 @@ async function manejar(req) {
       let b; try { b = await req.json(); } catch { return res({ error: "JSON no válido" }, 400); }
       if (b?.op === "login") { const u = await ingresar(b.user, b.pass);
         if (!u) { await new Promise(r => setTimeout(r, 350)); return res({ error: "Usuario o contraseña incorrectos." }, 401); }
+        if (u.bloqueado) return res({ error: "Su usuario está bloqueado. Comuníquese con su usuario principal o con el administrador." }, 403);
         const { clave, ...pub } = u; return res({ ok: true, ...(await emitir(u)), perfil: { ...pub, clave } }); }
       const s = await sesion(req); if (!s) return res({ error: "Sesión no válida o vencida. Ingrese nuevamente." }, 401);
       const ws = String(b.ws || ""); if (!WS.test(ws)) return res({ error: "base no válida" }, 400);

@@ -1145,6 +1145,7 @@ header.top .menu-toggle{background:rgba(255,255,255,.14)!important;border-color:
 .u-libre{display:flex!important;align-items:flex-start;gap:10px;margin-top:12px;padding:10px 12px!important;border-radius:12px!important;border:1px solid rgba(16,185,129,.35)!important;background:linear-gradient(135deg,rgba(16,185,129,.07),rgba(8,145,178,.05));cursor:pointer;max-width:760px}
 .u-libre>.ic{width:20px;height:20px;color:#059669;flex:none;margin-top:1px}
 .u-libre input{margin-top:3px}
+.u-inveq{border-color:rgba(124,58,237,.35)!important;background:linear-gradient(135deg,rgba(124,58,237,.07),rgba(37,99,235,.05))}.u-inveq>.ic{color:#7c3aed!important}.u-inveq b{color:#5b21b6!important}
 .u-libre span{display:grid;gap:2px}.u-libre b{font-size:12.8px;color:#065f46}.u-libre small{font-size:11.5px;color:#64748b;font-weight:500}
 
 /* Autorización: exportar / importar usuarios entre copias de SIGISAC */
@@ -3260,7 +3261,7 @@ async function claveOk(p, u) { if (!u || !u.clave) return false;
 /* Migra claves antiguas en texto plano a hash (una sola vez por navegador) */
 async function usrMigrar() { let n = 0; for (const u of USERS || []) { if (u.pass != null) { if (!u.clave) u.clave = await claveHash(u.pass); if (u.user === 'admin' && u.pass === 'sigisac2026') u.def = true; delete u.pass; n++; } u.modulos = u.modulos || ['Todos']; } if (n) mutate(); return n; }
 const usrId = u => /^[A-Za-z0-9_\-~:@+]{1,120}$/.test(u) ? u : 'x' + [...new TextEncoder().encode(u)].map(b => b.toString(16).padStart(2, '0')).join('').slice(0, 190);
-const usrPub = u => ({ dni: u.dni || '', correo: u.correo || '', nombre: u.nombre || '', cargo: u.cargo || '', user: u.user, clave: u.clave || '', modulos: [...(u.modulos || ['Todos'])], def: !!u.def, upd: u.upd || '', srv: !!u.srv, ws: u.ws || '', plan: u.plan || '', tipo: u.tipo || '', padre: u.padre || '', libre: u.libre !== false, ent: u.ent || null, equipos: (u.equipos || []).map(e => ({ id: e.id, desc: e.desc || '', alta: e.alta || '' })), bloq: !!u.bloq });
+const usrPub = u => ({ dni: u.dni || '', correo: u.correo || '', nombre: u.nombre || '', cargo: u.cargo || '', user: u.user, clave: u.clave || '', modulos: [...(u.modulos || ['Todos'])], def: !!u.def, upd: u.upd || '', srv: !!u.srv, ws: u.ws || '', plan: u.plan || '', tipo: u.tipo || '', padre: u.padre || '', libre: u.libre !== false, invEquipo: !!u.invEquipo, grupo: u.grupo || '', ent: u.ent || null, equipos: (u.equipos || []).map(e => ({ id: e.id, desc: e.desc || '', alta: e.alta || '' })), bloq: !!u.bloq });
 const usrRol = u => u.modulos?.includes('Todos') && /Administrador/i.test(u.cargo || '') || u.user === 'admin' ? 'admin' : /Auditor|solo lectura/i.test(u.cargo || '') ? 'consulta' : 'operador';
 /* Canal 1: base compartida del artifact (en vivo) */
 /* ---------- Base compartida en la nube propia (Netlify Functions + Netlify Blobs) ----------
@@ -3939,6 +3940,7 @@ VIEWS.autorizacion = { render(el) {
     ${ex ? `<div class="lbl" style="margin:16px 0 8px">Ordenadores autorizados</div><div class="eq-list">${(u.equipos || []).length ? u.equipos.map(e => `<span class="eq-it">${ic('monitor')}<span><b class="mono">${h(e.id)}</b><small>${h(e.desc || '')}${e.alta ? ' · desde ' + h(e.alta.slice(0, 10)) : ''}</small></span><button class="icon-btn" data-a="eqDel" data-d="${h(e.id)}" title="Quitar autorización">${ic('x')}</button></span>`).join('') : '<span class="dim">Aún no ingresa: el primer ordenador desde el que ingrese quedará autorizado.</span>'}</div>
     <label class="chk" style="margin-top:12px"><input type="checkbox" id="u-bloq" ${u.bloq ? 'checked' : ''} ${u.user === SESSION?.user ? 'disabled' : ''}>Usuario bloqueado (no puede ingresar en ningún ordenador)</label>` : `<p class="dim" style="margin:14px 0 0">El nuevo usuario tendrá su <b>propia base de datos, sin información</b>: al ingresar registrará sus entidades y cargará su data.</p>`}
     <label class="chk u-libre"><input type="checkbox" id="u-libre" ${u.libre !== false ? 'checked' : ''}>${ic('monitor-smartphone')}<span><b>Ingreso libre desde cualquier ordenador o dispositivo</b><small>Se reconoce al instante en todos los equipos; cada ordenador nuevo queda registrado solo, sin esperar autorización (hasta el límite de su plan).</small></span></label>
+    <label class="chk u-libre u-inveq"><input type="checkbox" id="u-inveq" ${u.invEquipo ? 'checked' : ''}>${ic('users')}<span><b>Puede habilitar y registrar a su equipo de inventariadores</b><small>En Inventario físico › Planificación creará el usuario y la clave (hasta 6 dígitos) de cada inventariador, que solo accederá a Campo para realizar el inventario.</small></span></label>
     <div class="row" style="margin-top:16px"><button class="mini" data-a="save">${ic('save')}Guardar usuario</button>${ex ? `<button class="mini ghost" data-a="cancel">${ic('x')}Cancelar</button>` : ''}<span class="err" id="u-err"></span></div>`}`)}
   ${card('Usuarios autorizados', 'users', `${segAdmin() ? `<div class="u-io"><span class="dim">${ic('database')}${USR.db?.netlify ? 'Base compartida del sitio (Netlify)' : USR.db ? 'Base compartida de Claude' : SRV.ok ? 'Servidor SIGISAC' : 'Solo este dispositivo'}</span><button class="mini" data-a="uExp">${ic('hard-drive-download')}Exportar usuarios</button><label class="mini" style="cursor:pointer">${ic('upload')}Importar usuarios<input type="file" id="uImp" accept=".json,application/json" hidden></label></div>` : ''}<div id="tblU"></div>`, `${S.cfg.usuarios.length - nInv} principales · ${nInv} de inventario`)}</div>`;
   usrBadge();
@@ -3962,7 +3964,7 @@ VIEWS.autorizacion = { render(el) {
     if (ex && ex.user === SESSION?.user && !permOk(mods, 'autorizacion')) return err.textContent = 'No puede quitarse a sí mismo el acceso a Configuración › Autorización.';
     b.disabled = true; err.textContent = '';
     try { const u = { dni, correo: mail, nombre: val('u-nom'), cargo, user, clave: pw ? await claveHash(pw) : ex.clave, def: pw ? false : !!ex?.def, srv: !!ex?.srv, modulos: mods,
-        ws: ex ? ex.ws || '' : wsDe(user), plan: val('u-plan') || 'basico', libre: !!$('#u-libre')?.checked, equipos: ex?.equipos || [], bloq: ex ? !!$('#u-bloq')?.checked && ex.user !== SESSION?.user : false };
+        ws: ex ? ex.ws || '' : wsDe(user), plan: val('u-plan') || 'basico', libre: !!$('#u-libre')?.checked, invEquipo: !!$('#u-inveq')?.checked, equipos: ex?.equipos || [], bloq: ex ? !!$('#u-bloq')?.checked && ex.user !== SESSION?.user : false };
       if (ex) S.cfg.usuarios[S.cfg.usuarios.indexOf(ex)] = u; else S.cfg.usuarios.push(u);
       if (ex && ex.user === SESSION?.user) SESSION = u;
       VIEWS.autorizacion.edit = null; mutate('Usuario guardado: ' + u.user); refresh();
@@ -4481,6 +4483,7 @@ VIEWS.planificacion = { render(el) {
   ${card('Comisión de inventario', 'users', `<div class="tbl-wrap"><table><thead><tr><th>Rol</th><th>Cargo / dependencia</th><th>Apellidos y nombres</th><th></th></tr></thead><tbody>${com.map((c, i) => `<tr><td>${h(c.rol)}</td><td>${h(c.cargo)}</td><td><input data-com="${i}" value="${h(c.nombre || '')}" placeholder="Nombre" style="width:100%;background:var(--bg-2);border:1px solid var(--line-2);border-radius:8px;padding:5px 8px" aria-label="Nombre ${h(c.rol)}"></td><td><button class="icon-btn" data-a="delCom" data-i="${i}" title="Quitar">${ic('trash-2')}</button></td></tr>`).join('')}</tbody></table></div>
     <div class="form-grid" style="margin-top:14px">${select('Rol', 'p-rol', ['Presidente', 'Miembro', 'Facilitador', 'Veedor'], 'Miembro', 'users')}${field('Cargo / dependencia', 'p-cargo', '', 'Sub Gerencia de …', 'briefcase')}${field('Apellidos y nombres', 'p-nom', '', '', 'user-round')}</div><div class="row" style="margin-top:12px"><button class="mini" data-a="addCom">${ic('plus')}Agregar integrante</button></div>`)}
   ${personalCard()}
+  ${invAccCard()}
   ${card('Cronograma por dependencia', 'calendar', `<div class="form-grid" style="margin-bottom:14px">${field('Inicio', 'p-ini', S.cfg.cronoIni || todayISO(), '', 'calendar', 'date')}${field('Bienes por día por grupo', 'p-ritmo', S.cfg.ritmo ?? 120, '', 'gauge', 'number')}${field('Grupos', 'p-eq', S.cfg.equipos ?? 3, '', 'users', 'number')}<div class="field"><label>&nbsp;</label><span class="flag" style="--k:var(--ok);height:44px">${ic('refresh-cw')}Actualización automática</span></div></div><div id="croBody">${cronoBody()}</div>`, S.cfg.cronograma.length + ' áreas')}</div>`;
   cronoTable();
   let tmr = null; const upd = () => { clearTimeout(tmr); tmr = setTimeout(() => { const ini = val('p-ini'); if (/^\d{4}-\d{2}-\d{2}$/.test(ini)) S.cfg.cronoIni = ini; S.cfg.ritmo = Math.max(0, Math.round(+val('p-ritmo') || 0)); S.cfg.equipos = Math.max(0, Math.min(50, Math.round(+val('p-eq') || 0))); $('#croBody').innerHTML = cronoBody(); cronoTable(); mutate(); }, 350); };
@@ -5432,6 +5435,59 @@ GLOBAL_ACT_EXTRA.invGuardar = async b => { if (b) b.disabled = true; const t = n
   } catch (e) { console.error(e); toast('No se pudo guardar: ' + e.message, 'bad'); } finally { if (b) b.disabled = false; } };
 GLOBAL_ACT_EXTRA.invRespaldo = () => { closeModal(); VIEWS.data.act.backup(); };
 
+
+/* ---------- Planificación: accesos del equipo de inventariadores ----------
+   El usuario principal autorizado (Autorización › «Puede habilitar y registrar a su equipo de inventariadores») crea aquí el
+   usuario y la clave (4 a 6 dígitos) de cada inventariador. Cada acceso entra solo a Inventario físico › Campo, trabaja
+   sobre la entidad activa de este usuario principal y queda reconocido al instante en cualquier dispositivo (base central). */
+const yo = () => USERS.find(x => x.user === SESSION?.user) || SESSION;
+const invPuede = () => !!SESSION && !esInv(SESSION) && (segAdmin() || !!yo()?.invEquipo);
+const invMios = () => USERS.filter(x => esInv(x) && x.padre === SESSION?.user);
+function invAccCard() { if (!SESSION || esInv(SESSION)) return '';
+  if (!invPuede()) return card('Accesos del equipo de inventariadores', 'key-round', `<div class="alert" style="--k:var(--warn)">${ic('lock')}<div>Su usuario aún no está autorizado para registrar a su equipo de inventariadores. Solicítelo al administrador de SIGISAC (Configuración › Autorización › Usuario principal › «Puede habilitar y registrar a su equipo de inventariadores»).</div></div>`);
+  const e = S.cfg.entidad || {}, L = personal(), mios = invMios(), ed = VIEWS.planificacion.invEd ? mios.find(x => x.user === VIEWS.planificacion.invEd) : null;
+  const nombres = [...new Set(L.map(p => `${p.ap} ${p.no || ''}`.trim()).filter(Boolean))];
+  const gr = Math.max(S.cfg.equipos || 1, ...L.map(p => p.g), 1);
+  const filas = mios.map(x => `<tr><td class="mono"><b>${h(x.user)}</b></td><td>${h(x.nombre || '')}</td><td>${x.grupo ? 'Grupo ' + h(x.grupo) : '—'}</td><td>${h(x.ent?.nombre || '')}</td><td><span class="badge" style="--k:var(${x.bloq ? '--bad' : x.pend ? '--warn' : '--ok'})">${x.bloq ? 'Bloqueado' : x.pend ? 'Pendiente de enviar' : 'Activo'}</span></td>
+    <td class="r" style="white-space:nowrap"><div style="display:inline-flex;gap:6px"><button class="icon-btn" data-a="invEdit" data-u="${h(x.user)}" title="Editar / cambiar clave">${ic('pencil')}</button><button class="icon-btn" data-a="invBloq" data-u="${h(x.user)}" title="${x.bloq ? 'Activar' : 'Bloquear'}">${ic(x.bloq ? 'lock-open' : 'lock')}</button><button class="icon-btn" data-a="invDel" data-u="${h(x.user)}" title="Eliminar acceso" style="color:var(--bad)">${ic('trash-2')}</button></div></td></tr>`).join('');
+  return card('Accesos del equipo de inventariadores', 'key-round', `<p class="muted" style="margin:0 0 12px">Cree el <b>usuario y la clave</b> de cada integrante de su equipo. Solo podrá ingresar a <b>Inventario físico › Campo</b> de <b>${h(e.nombre || 'su entidad activa')}</b>, desde cualquier computadora, tablet o celular.</p>
+    <div class="form-grid">
+      <div class="field"><label for="ia-nom">Inventariador</label><div class="input">${ic('user-round')}<input id="ia-nom" list="ia-noms" value="${h(ed?.nombre || '')}" placeholder="Apellidos y nombres"><datalist id="ia-noms">${nombres.map(n => `<option value="${h(n)}">`).join('')}</datalist></div></div>
+      <div class="field"><label for="ia-user">Usuario</label><div class="input">${ic('id-card')}<input id="ia-user" value="${h(ed?.user || '')}" ${ed ? 'readonly' : ''} placeholder="p. ej. inv01" maxlength="20" autocomplete="off" spellcheck="false" autocapitalize="off"></div></div>
+      <div class="field"><label for="ia-pw">${ed ? 'Nueva clave (opcional)' : 'Clave'} · hasta 6 dígitos</label><div class="input">${ic('key-round')}<input id="ia-pw" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="6" placeholder="4 a 6 dígitos" autocomplete="new-password"></div></div>
+      ${select('Grupo', 'ia-g', [['', 'Sin grupo'], ...Array.from({ length: gr }, (_, i) => [String(i + 1), 'Grupo ' + (i + 1)])], ed?.grupo || '', 'users')}
+    </div>
+    <div class="err" id="ia-err" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:10px"><button class="mini" data-a="invSave" style="--c:var(--ok)">${ic(ed ? 'save' : 'user-plus')}${ed ? 'Guardar cambios' : 'Crear acceso'}</button>${ed ? `<button class="mini ghost" data-a="invCancel">${ic('x')}Cancelar</button>` : ''}</div>
+    <div class="tbl-wrap" style="margin-top:14px"><table><thead><tr><th>Usuario</th><th>Inventariador</th><th>Grupo</th><th>Entidad</th><th>Estado</th><th></th></tr></thead><tbody>${filas || `<tr><td colspan="6" class="muted">Aún no registra accesos para su equipo.</td></tr>`}</tbody></table></div>`, mios.length + ' acceso' + (mios.length === 1 ? '' : 's'));
+}
+Object.assign(VIEWS.planificacion.act, {
+  async invSave(b) { const err = $('#ia-err'); if (!invPuede()) return err.textContent = 'Su usuario no está autorizado para registrar inventariadores.';
+    const ed = VIEWS.planificacion.invEd ? invMios().find(x => x.user === VIEWS.planificacion.invEd) : null;
+    const nombre = val('ia-nom').replace(/\s+/g, ' ').toUpperCase(), user = val('ia-user'), pw = $('#ia-pw').value.trim(), g = val('ia-g'), e = S.cfg.entidad || {};
+    if (!nombre) { $('#ia-nom').focus(); return err.textContent = 'Ingrese los apellidos y nombres del inventariador.'; }
+    if (!/^[A-Za-z0-9._-]{3,20}$/.test(user)) { $('#ia-user').focus(); return err.textContent = 'El usuario debe tener de 3 a 20 caracteres (letras, números, punto o guion), sin espacios.'; }
+    if (!ed && !pw) { $('#ia-pw').focus(); return err.textContent = 'Ingrese la clave (4 a 6 dígitos).'; }
+    if (pw && !/^\d{4,6}$/.test(pw)) { $('#ia-pw').focus(); return err.textContent = 'La clave debe tener solo números: mínimo 4 y máximo 6 dígitos.'; }
+    if (!ed && USERS.some(x => x.user.toLowerCase() === user.toLowerCase())) { $('#ia-user').focus(); return err.textContent = 'Ese usuario ya existe. Elija otro.'; }
+    if (!ed && !e.nombre) return err.textContent = 'Registre primero la entidad (Configuración › Entidad): el equipo inventariará esa entidad.';
+    b.disabled = true; err.textContent = '';
+    try { const u = { ...(ed || {}), user, nombre, cargo: 'Inventariador', dni: ed?.dni || '', correo: ed?.correo || '', clave: pw ? await claveHash(pw) : ed.clave, def: false, modulos: ['Inventario físico/campo'], tipo: 'inventario', padre: SESSION.user,
+        ws: WS_KEY, ent: ed?.ent || { nombre: e.nombre || '', ruc: e.ruc || '', ue: e.ue || '', secEjec: e.secEjec || '' }, grupo: g, plan: '', libre: true, equipos: ed?.equipos || [], bloq: !!ed?.bloq };
+      if (ed) USERS[USERS.indexOf(ed)] = u; else USERS.push(u); VIEWS.planificacion.invEd = null;
+      mutate(`${ed ? 'Acceso actualizado' : 'Acceso creado'} para el inventariador ${nombre} (usuario ${user})`);
+      const ok = await usrPush(u, pw, true); refresh();
+      toast(ok === false ? `Acceso guardado en este equipo; no se pudo enviar a la base central (${USR.ro ? 'sin permiso' : 'se reintentará'}).` : `${ed ? 'Acceso actualizado' : 'Acceso creado'}: ${user}. Ya puede ingresar a Campo desde cualquier dispositivo.`, ok === false ? 'warn' : 'ok', 6000);
+    } catch (e2) { err.textContent = e2.message; } finally { b.disabled = false; } },
+  invEdit(b) { VIEWS.planificacion.invEd = b.dataset.u; refresh(); setTimeout(() => { $('#ia-nom')?.scrollIntoView({ block: 'center', behavior: 'smooth' }); $('#ia-pw')?.focus(); }, 60); },
+  invCancel() { VIEWS.planificacion.invEd = null; refresh(); },
+  async invBloq(b) { const x = invMios().find(z => z.user === b.dataset.u); if (!x) return; x.bloq = !x.bloq; mutate(`${x.bloq ? 'Acceso bloqueado' : 'Acceso activado'}: ${x.user}`); await usrPush(x, null, true); refresh(); toast(`${x.user}: ${x.bloq ? 'bloqueado (no puede ingresar)' : 'activo'}`, 'ok'); },
+  invDel(b) { const x = invMios().find(z => z.user === b.dataset.u); if (!x) return;
+    $('#modal').innerHTML = `<div class="m-card aviso" role="alertdialog" aria-modal="true" aria-labelledby="idT"><div class="av-ico">${ic('trash-2')}</div><h3 id="idT">Eliminar acceso</h3><p>Se eliminará el acceso de <b>${h(x.nombre || x.user)}</b> (usuario <b>${h(x.user)}</b>). Ya no podrá ingresar a Campo. Los bienes que verificó se conservan.</p>
+      <div class="av-btns"><button class="btn-glow" data-a="invDelOk" data-u="${h(x.user)}">${ic('trash-2')}Eliminar</button><button class="mini ghost" data-close>${ic('x')}Cancelar</button></div></div>`; $('#modal').hidden = false; }
+});
+GLOBAL_ACT_EXTRA.invDelOk = async b => { const x = invMios().find(z => z.user === b.dataset.u); closeModal(); if (!x) return; USERS = USERS.filter(z => z !== x); mutate('Acceso eliminado: ' + x.user); await usrBorrar(x.user); refresh(); toast('Acceso eliminado: ' + x.user, 'ok'); };
+
 /* ---------- Eventos globales ---------- */
 document.addEventListener('click', async e => {
   if (e.target.closest('[data-close]')) return closeModal();
@@ -5463,6 +5519,7 @@ $('#loginForm').addEventListener('submit', async e => { e.preventDefault(); cons
       const nr = await netLogin(u, p); if (nr.ok) { await usrReconectar(); if (!USR.db) { NET.tok = ''; netGuardarTok(); } } }
     if (USR.db?.netlify && USR.db.auth) { msg('Verificando en la base central…'); const nr = await netLogin(u, p); $('#lg-err').textContent = '';
       if (nr.ok) { const { inv, admin, ...pf } = nr.perfil; const i = USERS.findIndex(x => x.user === pf.user), nu = { ...(i >= 0 ? USERS[i] : {}), ...pf, pend: undefined }; if (!pf.clave) nu.clave = i >= 0 && USERS[i].clave ? USERS[i].clave : await claveHash(p); if (i >= 0) USERS[i] = nu; else USERS.push(nu); NET.ok = nu.user; mutate(); }
+      else if (nr.status === 403) { $('#lg-err').textContent = nr.error; return; }
       else NET.err = nr.status === 401 ? 'Su usuario o clave no coinciden con la base central (o su usuario no está registrado allí). Lo que registre se guardará solo en este equipo.' : 'No se pudo conectar con la base central (' + (nr.error || 'sin conexión') + '). Lo que registre se guardará en este equipo.'; }
     const buscar = () => USERS.filter(x => x.user === u || (x.dni && x.dni === u) || (x.correo && x.correo.toLowerCase() === u.toLowerCase())); let cands = buscar(), usr = NET.ok ? USERS.find(x => x.user === NET.ok) || null : null; NET.ok = ''; /* validado por el servidor */
     if (!usr) for (const c of cands) if (await claveOk(p, c)) { usr = c; break; }

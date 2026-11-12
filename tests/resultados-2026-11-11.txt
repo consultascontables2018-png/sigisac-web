@@ -1,19 +1,20 @@
+Funciones: rutas /api/db y /api/ws declaradas
 listo
 7.8s X admin: {"ent":"MUNICIPALIDAD DISTRITAL DE EL TAMBO","dir":"Av. Mariscal Castilla N° 1051","base":4964,"inv":5410,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
-17.6s A al ingresar: {"ent":"","dir":"","base":0,"inv":0,"ents":1,"save":"Guardado correctamente","bar":"","modal":"No tienes entidades registradas","estado":"ok","tok":true}
+17.5s A al ingresar: {"ent":"","dir":"","base":0,"inv":0,"ents":1,"save":"Guardado correctamente","bar":"","modal":"No tienes entidades registradas","estado":"ok","tok":true}
 21.6s A guardado: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"","base":60000,"inv":300,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
-  manifiesto: {"n":2,"size":1050020,"nb":60305,"nom":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","t":"2026-11-12T03:24:42.536Z"}
-26.6s B durante carga: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"","base":60000,"inv":300,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
-27.6s B cargado: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"","base":60000,"inv":300,"ents":1,"save":"Guardando en la base central…","bar":"","modal":"","estado":"ok","tok":true}
-33.4s A recibe cambio de B: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"JR. LIMA 123 - MODIFICADO EN B","base":60000,"inv":300,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true} MALO
-38.3s B recibe 2da entidad: {"ent":"UGEL PRUEBA","dir":"","base":0,"inv":0,"ents":2,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
-47.3s C otra cuenta: {"ent":"","dir":"","base":0,"inv":0,"ents":1,"save":"Guardado correctamente","bar":"","modal":"No tienes entidades registradas","estado":"ok","tok":true}
+  manifiesto: {"n":2,"size":1050008,"nb":60305,"nom":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","t":"2026-11-12T05:35:31.766Z"}
+26.7s B durante carga: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"","base":60000,"inv":300,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
+27.9s B cargado: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"","base":60000,"inv":300,"ents":1,"save":"Guardando en la base central…","bar":"","modal":"","estado":"ok","tok":true}
+33.5s A recibe cambio de B: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"JR. LIMA 123 - MODIFICADO EN B","base":60000,"inv":300,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true} MALO
+38.5s B recibe 2da entidad: {"ent":"UGEL PRUEBA","dir":"","base":0,"inv":0,"ents":2,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
+47.5s C otra cuenta: {"ent":"","dir":"","base":0,"inv":0,"ents":1,"save":"Guardado correctamente","bar":"","modal":"No tienes entidades registradas","estado":"ok","tok":true}
   C lee base de victoria: 403 No tiene permiso para ver esta base de trabajo.
   C escribe base de victoria: 403 No tiene permiso para modificar esta base de trabajo.
   C se sube privilegios: cargo=Jefe de Patrimonio admin=false
-  C cambia clave de victoria: Solo puede administrar sus propios usuarios de inventario
+  C cambia clave de victoria: Su usuario no está autorizado para registrar inventariadores (Autorización › Usuario principal)
   sin sesión /api/db usuarios: 401  claves expuestas a C: false
-57.1s A reingreso: {"ent":"UGEL PRUEBA","dir":"","base":0,"inv":0,"ents":2,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
+57.4s A reingreso: {"ent":"UGEL PRUEBA","dir":"","base":0,"inv":0,"ents":2,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
 
 crea inventariador: true
 inventariador ve: {"ws":"ws-victoria","ent":"UGEL PRUEBA","ents":2,"base":0,"est":"ok"}
@@ -40,12 +41,12 @@ cuenta sin datos con fallo de red: [
   '(sin aviso de vacío)'
 ]
 sesión vencida: Sesión no válida o vencida. Ingrese nuevamente.
-Ingresar nuevamente
+Activar sincronización
 {"ent":"ENTIDAD MIGRADA DESDE LA PRIMERA VERSION","inv":1,"base":1,"est":"ok","modal":""}
 legado público: 403
 
 guardar inventario: Guardado correctamente | MUNICIPALIDAD PROVINCIAL DE PRUEBA · 300 bienes verificados · 300 en inventario. | Guardado en este navegador | Copia de seguridad recuperable (Configuración › Data › Recuperar base de trabajo) | Guardado correctamente en la base central (confirmado por el servidor) | Aceptar | Descargar respaldo .json
-recuperar: Recuperar base de trabajo | Versiones de su base guardadas en la nube y en este navegador. Al restaurar una, la base actual se guarda antes como copia, así que puede volver atrás. | ORIGEN	FECHA	ENTIDADES	REGISTROS	 | En la nube actual	11/11/2026, 10:26:36 p. m.	MUNICIPALIDAD PROVINCIAL DE PRUEBA · UGEL PRUEBA | 	60,310	 | Ver | Copia en este navegador	11/11/2026, 10:26:35 p. m.	MUNICIPALIDAD PROVINCIAL DE PRUEBA · UGEL PRUEBA | Guardar inventario (Campo) | 	60,310	 | Ver | En la nube	11/11/2026, 10:25:16 p. m.	U
+recuperar: Recuperar base de trabajo | Versiones de su base guardadas en la nube y en este navegador. Al restaurar una, la base actual se guarda antes como copia, así que puede volver atrás. | ORIGEN	FECHA	ENTIDADES	REGISTROS	 | En la nube actual	12/11/2026, 12:37:26 a. m.	MUNICIPALIDAD PROVINCIAL DE PRUEBA · UGEL PRUEBA | 	60,310	 | Ver | Copia en este navegador	12/11/2026, 12:37:25 a. m.	MUNICIPALIDAD PROVINCIAL DE PRUEBA · UGEL PRUEBA | Guardar inventario (Campo) | 	60,310	 | Ver | En la nube	12/11/2026, 12:36:06 a. m.	U
 modo archivo: {"ent":"MUNICIPALIDAD DISTRITAL DE EL TAMBO","save":"Guardado en este navegador","bar":true,"est":"local"}
 errores: 
 X: {"tok":true,"u":"admin","err":""}
@@ -55,5 +56,16 @@ M recupera: {"ent":"MUNICIPALIDAD LOCAL SIN NUBE","ents":1,"periodos":"2025:CERR
 L recibe avance de M: {"ent":"MUNICIPALIDAD LOCAL SIN NUBE","ents":1,"periodos":"2025:CERRADO,2026:APERTURADO","inv":150,"verif":60,"est":"ok","save":"Guardado correctamente","tok":true}
 M recibe apertura de L: {"ent":"MUNICIPALIDAD LOCAL SIN NUBE","ents":1,"periodos":"2025:CERRADO,2026:APERTURADO,2027:APERTURADO","inv":150,"verif":60,"est":"ok","save":"Guardado correctamente","tok":true}
 versiones en la nube: 3  bienes únicos M: 150/150
+
+sin permiso (pantalla): aviso de bloqueo
+sin permiso (servidor): Su usuario no está autorizado para registrar inventariadores (Autorización › Usuario principal)
+se autoriza solo: invEquipo=false
+casilla en Autorización: true
+con permiso: true
+clave 7 dígitos: 6 La clave debe tener solo números: mínimo 4 y máximo 6 dígitos.
+clave válida: ""
+tabla: inv01 PEREZ LUIS — MUNICIPALIDAD DE PRUEBA EQUIPO Activo 
+inventariador: {"ok":true,"user":"inv01","inv":true,"ws":"ws-jefe","ent":"MUNICIPALIDAD DE PRUEBA EQUIPO","vista":"campo","menu":["Inventario físico1","Campo"]}
+bloqueado: Su usuario está bloqueado. Comuníquese con su usuario principal o con el administrador.
 
 exit 0

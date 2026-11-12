@@ -5,7 +5,7 @@ const st=p=>p.evaluate(()=>({ent:S.cfg.entidad.nombre,dir:S.cfg.entidad.direccio
 const t0=Date.now(),T=()=>((Date.now()-t0)/1000).toFixed(1)+'s';
 // 1 admin creates users
 const X=await page('X');await login(X,'admin','sigisac2026',4000);
-await X.evaluate(async()=>{for(const [u,n,c] of [['victoria','VICTORIA ZÚÑIGA FLORENCIO','v1'],['otro','OTRO USUARIO','o1']]){const x={user:u,nombre:n,cargo:'Jefe de Patrimonio',clave:await claveHash(c),ws:wsDe(u),modulos:['Todos'],libre:true,plan:'gold'};USERS.push(x);await usrPush(x);}mutate();});
+await X.evaluate(async()=>{for(const [u,n,c] of [['victoria','VICTORIA ZÚÑIGA FLORENCIO','v1'],['otro','OTRO USUARIO','o1']]){const x={user:u,nombre:n,cargo:'Jefe de Patrimonio',clave:await claveHash(c),ws:wsDe(u),modulos:['Todos'],libre:true,plan:'gold',invEquipo:u==='victoria'};USERS.push(x);await usrPush(x);}mutate();});
 console.log(T(),'X admin:',JSON.stringify(await st(X)));
 // 2 A: victoria registers entity + 60,000 SIGA rows
 const A=await page('A');await login(A,'victoria','v1',6000);console.log(T(),'A al ingresar:',JSON.stringify(await st(A)));
