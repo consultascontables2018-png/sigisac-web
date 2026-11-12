@@ -3898,13 +3898,14 @@ function renderNav() {
   }).join('')).join('');
 }
 function route() {
+  if (SAN_ON) return void setTimeout(route); /* nunca dentro de la data del saneamiento */
   if (typeof campoSync === 'function') campoSync();
   if (!segIntegridad()) return;
   let id = (location.hash || '').slice(1); if (VIEWS[id] && id !== 'home' && SESSION && !allowed(id)) segAlerta('acceso_denegado', SESSION.user, `${SESSION.user} intentó abrir «${SUB[id]?.s.name || id}» (${SUB[id]?.m.name || ''}), módulo que no tiene habilitado.`, {}, 'AD-' + usrId(SESSION.user) + '-' + new Date().toISOString().slice(0, 13).replace(/\D/g, ''));
   if (!VIEWS[id] || !allowed(id)) id = esInv(SESSION) ? 'campo' : 'home';
   CUR = id; if (SUB[id]) openMods.add(SUB[id].m.id);
   const v = $('#view'); v.onclick = null; v.onchange = null; v.oninput = null;
-  try { VIEWS[id].render(v); } catch (e) { console.error(e); v.innerHTML = `<div class="alert" style="--k:var(--bad)">${ic('circle-x')}<div>Error al mostrar la vista: ${h(e.message)}</div></div>`; }
+  try { if (SAN_VIEWS.has(id)) { withSan(() => VIEWS[id].render(v)); sanEl(v); } else VIEWS[id].render(v); } catch (e) { console.error(e); v.innerHTML = `<div class="alert" style="--k:var(--bad)">${ic('circle-x')}<div>Error al mostrar la vista: ${h(e.message)}</div></div>`; }
   renderNav();
   { const TOP = { home: [{ name: 'Panel principal', c: '--c-home', icon: 'layout-dashboard' }, { name: 'Inicio', icon: 'layout-dashboard' }], planes: [{ name: 'Suscripción', c: '--c-plan', icon: 'crown' }, { name: 'Planes SIGISAC', icon: 'crown' }] }, mm = TOP[id]?.[0] || SUB[id].m, ss = TOP[id]?.[1] || SUB[id].s;
     $('#crumbs').innerHTML = `<span class="tb-ico" style="--c:var(${mm.c})">${ic(ss.icon || mm.icon)}</span><span class="tb-txt"><span class="tb-eye">${h(mm.name)}</span><b class="tb-tit">${h(ss.name)}</b></span>`;
@@ -5093,7 +5094,7 @@ VIEWS.procesar = { render(el) {
   const st = [['Inventario valorizado', S.inv.length > 0], ['Balance SIAF', !!S.bal], ['Correcciones aplicadas', pend === 0], ['Notas generadas', ns.length > 0], ['Saldo saneado = inventario', fin < 0.05]];
   el.innerHTML = `<div style="--c:var(${m.c});display:grid;gap:18px">
   ${card('Estado del proceso', 'cog', `<div class="steps">${st.map(([t, d], i) => `<span class="step ${d ? 'done' : ''}"><span class="n">${d ? '✓' : i + 1}</span>${t}</span>`).join(ic('chevron-right', 'dim'))}</div><div class="row" style="margin-top:14px;align-items:center"><label class="btn-glow" style="cursor:pointer">${ic('cloud-upload')}Importar invent. valorizado<input type="file" id="pr-file" hidden accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv,.prn"></label><button class="btn-glow pr-cargar" data-a="cargar" ${VIEWS.procesar.sel || S.inv.length ? '' : 'disabled'}>${ic('upload')}Cargar</button></div>
-    <div class="pick ${VIEWS.procesar.sel ? 'on' : ''}" style="margin-top:10px">${VIEWS.procesar.sel ? `${ic('file-text')}<span><b>${h(VIEWS.procesar.sel.name)}</b> · ${fmtN(VIEWS.procesar.sel.size / 1024, 0)} KB · listo: pulse <b>Cargar</b> para importarlo y procesar el reporte patrimonial</span>` : `${ic('info')}<span>${S.inv.length ? `Inventario valorizado cargado: <b>${fmtI(S.inv.length)} bienes</b>. Importe un archivo nuevo o pulse <b>Cargar</b> para volver a procesar el reporte patrimonial.` : 'Seleccione el inventario valorizado (Excel o TXT) y pulse <b>Cargar</b>.'}</span>`}</div>`)}
+    <div class="pick ${VIEWS.procesar.sel ? 'on' : ''}" style="margin-top:10px">${VIEWS.procesar.sel ? `${ic('file-text')}<span><b>${h(VIEWS.procesar.sel.name)}</b> · ${fmtN(VIEWS.procesar.sel.size / 1024, 0)} KB · listo: pulse <b>Cargar</b> para importarlo y procesar el reporte patrimonial</span>` : `${ic('info')}<span>${S.inv.length ? `Inventario valorizado del saneamiento: <b>${fmtI(S.inv.length)} bienes</b>${S.sanArch ? ` (${h(S.sanArch.nombre)})` : ''}, independiente del inventario de los usuarios. Importe un archivo nuevo o pulse <b>Cargar</b> para volver a procesar el reporte patrimonial.` : 'Seleccione el inventario valorizado (Excel o TXT) y pulse <b>Cargar</b>. Se usa solo en este módulo; no modifica el inventario de los usuarios.'}</span>`}</div>`)}
   <div class="kpis">${['CORRECCION', 'RECLASIFICACION', 'DEPURACION', 'ALTAS', 'DEPRECIACION'].map(t => { const l = ns.filter(n => n.tipo === t); return kpi(t.charAt(0) + t.slice(1).toLowerCase(), money(l.filter(n => n.efecto).reduce((s, n) => s + n.debe, 0)), `${l.length} nota(s)`, '--c-san'); }).join('')}</div>
   ${card('Reporte patrimonial procesado por cuenta', 'list-checks', '<div id="tblP"></div><div id="totP"></div>', '', exportBar('procesado'))}</div>`;
   el.onchange = e => { if (e.target.id !== 'pr-file' || !e.target.files?.[0]) return; VIEWS.procesar.sel = e.target.files[0]; e.target.value = ''; toast(`Archivo seleccionado: ${VIEWS.procesar.sel.name}. Pulse Cargar para importarlo.`, 'info'); refresh(); };
@@ -5103,10 +5104,20 @@ VIEWS.procesar = { render(el) {
   const T = MON.map(i => RW.reduce((a, x) => a + (+x[i] || 0), 0));
   $('#totP').innerHTML = `<div class="rpp-tot"><span>TOTALES · ${fmtI(RW.length)} bienes</span>${['Valor adquisición', `Dep. ejercicio al ${CT}`, `Dep. acumulada al ${CT}`, `Valor neto al ${CT}`].map((t, k) => `<span><small>${h(t)}</small><b>${fmtN(T[k])}</b></span>`).join('')}</div>`;
 }, act: {
-  /* Cargar: importa el inventario valorizado seleccionado (completar o reemplazar) y procesa el reporte patrimonial */
+  /* Cargar: lee el inventario valorizado seleccionado y, tras «Aceptar», lo guarda como data propia del saneamiento */
   async cargar(b) { const f = VIEWS.procesar.sel; if (!f) return VIEWS.procesar.act.run();
-    b.disabled = true; try { toast('Procesando ' + f.name + '…', 'info'); VIEWS.procesar.auto = true; await VIEWS.data.file(f, 'inv'); VIEWS.procesar.sel = null; }
-    catch (e) { VIEWS.procesar.auto = false; toast(e.message, 'bad', 7000); } finally { b.disabled = false; } },
+    b.disabled = true; try { toast('Leyendo ' + f.name + '…', 'info'); const sh = await IMP.readFile(f), sg = IMP.parseSiga(sh), iv = sg ? null : IMP.parseInv(sh);
+      if (!sg && !iv) throw new Error('No se reconoció la estructura del inventario valorizado. Se esperaba la columna CÓDIGO PATRIMONIAL.');
+      const rows = (sg ? sg.rows.map(bienFromBase) : iv.rows).map(x => enrich({ ...x, verif: todayISO(), fuente: 'SANEAMIENTO' }));
+      if (!rows.length) throw new Error('El archivo no tiene bienes.');
+      VIEWS.procesar.sel = null; VIEWS.procesar.pend = { rows, nombre: f.name };
+      modal('Importar inventario valorizado', `<p>Se leyeron <b>${fmtI(rows.length)}</b> bienes de <b>${h(f.name)}</b>.</p><div class="alert" style="--k:var(--c-san)">${ic('info')}<div>El archivo se usa solo en <b>Saneamiento contable 1503</b> (Procesar, Análisis, Corrección, Reclasificación, Depuración, Notas y Conciliación). <b>No modifica el inventario de los usuarios</b> ni otros módulos.</div></div>`, `<button class="mini" data-a="sanAceptar">${ic('check')}Aceptar</button>`, { tone: 'info', icon: 'upload' });
+    } catch (e) { toast(e.message, 'bad', 7000); } finally { b.disabled = false; } },
+  sanAceptar() { const p = VIEWS.procesar.pend; closeModal(); if (!p) return; VIEWS.procesar.pend = null;
+    S.inv = p.rows; S.sanArch = { nombre: p.nombre, fecha: new Date().toISOString(), n: p.rows.length }; invalidate();
+    const n = autoCorrForce(); invalidate(); const ns = NOTAS();
+    mutate(`Saneamiento 1503: inventario valorizado ${p.nombre} (${p.rows.length} bienes) procesado: ${n} correcciones, ${ns.length} notas`);
+    toast(`Inventario valorizado cargado en Saneamiento: ${fmtI(p.rows.length)} bienes · ${fmtI(n)} correcciones y ${ns.length} notas`, 'ok', 5000); refresh(); },
   run() { const n = autoCorrForce(); invalidate(); const ns = NOTAS(); mutate(`Saneamiento procesado: ${n} correcciones, ${ns.length} notas`); toast(`Proceso completo: ${fmtI(n)} correcciones aplicadas y ${ns.length} notas generadas`, 'ok', 4500); refresh(); } } };
 function autoCorrForce() { const a = S.cfg.autoCorr; S.cfg.autoCorr = true; const n = autoCorr(); S.cfg.autoCorr = a; return n; }
 
@@ -5219,8 +5230,8 @@ VIEWS.migracion = { render(el) {
    La entidad activa vive en S; las demás se guardan en S.ents[id]. */
 let SBN_PASS = '';
 const ENT_CFG = ['sinabipBajas', 'acta', 'sinabipUser', 'sinabipSes', 'sinabipImp', 'entidad', 'corte', 'metodo', 'periodos', 'comision', 'cronograma', 'cronoIni', 'ritmo', 'equipos', 'inventariadores', 'personal', 'a7'];
-function entSnap() { return { inv: S.inv, base: S.base, sinabip: S.sinabip || [], bal: S.bal, log: S.log || [], cfg: Object.fromEntries(ENT_CFG.map(k => [k, S.cfg[k]])) }; }
-function entLoad(e) { S.inv = e.inv || []; S.base = e.base || []; S.sinabip = e.sinabip || []; S.bal = e.bal || null; S.log = e.log || []; ENT_CFG.forEach(k => { S.cfg[k] = e.cfg?.[k]; }); }
+function entSnap() { return { inv: S.inv, sanInv: S.sanInv || [], sanArch: S.sanArch || null, base: S.base, sinabip: S.sinabip || [], bal: S.bal, log: S.log || [], cfg: Object.fromEntries(ENT_CFG.map(k => [k, S.cfg[k]])) }; }
+function entLoad(e) { S.inv = e.inv || []; S.sanInv = e.sanInv || []; S.sanArch = e.sanArch || null; S.base = e.base || []; S.sinabip = e.sinabip || []; S.bal = e.bal || null; S.log = e.log || []; ENT_CFG.forEach(k => { S.cfg[k] = e.cfg?.[k]; }); }
 function entEnsure() { if (!S.ents) { S.ents = { E1: null }; S.entId = 'E1'; } }
 function entMeta(id) { const e = id === S.entId ? { cfg: S.cfg, inv: S.inv, base: S.base, sinabip: S.sinabip, bal: S.bal } : S.ents[id]; const en = e?.cfg?.entidad || {}; return { id, nombre: en.nombre || 'Entidad sin nombre', ruc: en.ruc || '', ue: en.ue || '', sec: en.secEjec || '', inv: (e?.inv || []).length, base: (e?.base || []).length, sin: (e?.sinabip || []).length, bal: e?.bal?.meta?.periodo || '' }; }
 function entSwitch(id, silent) { if (!S.ents[id] && id !== S.entId) return; if (id === S.entId) return; S.ents[S.entId] = entSnap(); entLoad(S.ents[id]); S.ents[id] = null; S.entId = id; invalidate(); mutate(); if (!silent) { toast('Entidad activa: ' + (S.cfg.entidad.nombre || id), 'ok'); route(); } if (SRV.token) srvTick(); }
@@ -5486,8 +5497,8 @@ async function wsWatch() { wsDiario(); if (!SESSION) return; if (!USR.db) { if (
    2) antes de cada reemplazo se guarda una copia en este navegador (y una copia diaria al ingresar);
    3) en la nube se conservan las versiones anteriores (las más recientes, una por día y la más completa);
    4) Configuración › Data › Recuperar base de trabajo permite ver y restaurar cualquiera de ellas.                    */
-function wsCont(st) { if (!st) return 0; let n = 0; const una = e => { if (!e) return; n += (e.inv || []).length + (e.base || []).length + (e.sinabip || []).length + (e.bal ? 25 : 0) + (e.cfg?.entidad?.nombre ? 5 : 0); };
-  una({ inv: st.inv, base: st.base, sinabip: st.sinabip, bal: st.bal, cfg: st.cfg }); for (const k in (st.ents || {})) una(st.ents[k]); return n; }
+function wsCont(st) { if (!st) return 0; let n = 0; const una = e => { if (!e) return; n += (e.inv || []).length + (e.sanInv || []).length + (e.base || []).length + (e.sinabip || []).length + (e.bal ? 25 : 0) + (e.cfg?.entidad?.nombre ? 5 : 0); };
+  una({ inv: st.inv, sanInv: st.sanInv, base: st.base, sinabip: st.sinabip, bal: st.bal, cfg: st.cfg }); for (const k in (st.ents || {})) una(st.ents[k]); return n; }
 function wsNom(st) { if (!st) return ''; const L = [st.cfg?.entidad?.nombre, ...Object.values(st.ents || {}).map(e => e?.cfg?.entidad?.nombre)].filter(Boolean); return [...new Set(L)].join(' · ').slice(0, 200); }
 function wsRes(st) { const L = [{ cfg: st.cfg, inv: st.inv, base: st.base, sinabip: st.sinabip, bal: st.bal }, ...Object.values(st.ents || {})].filter(Boolean);
   return L.map(e => `<li><b>${h(e.cfg?.entidad?.nombre || 'Entidad sin nombre')}</b> · ${fmtI((e.inv || []).length)} bienes inventariados · ${fmtI((e.base || []).length)} SIGA MP · ${fmtI((e.sinabip || []).length)} SINABIP${e.bal ? ' · balance SIAF' : ''}</li>`).join(''); }
@@ -5625,6 +5636,17 @@ async function autPermiso(chk) { if (!segAdmin()) { chk.checked = !chk.checked; 
   try { const ok = await usrPush(u, null, true); toast(ok === false ? 'Guardado en este equipo; se enviará a la base central al reconectar' : `${u.nombre || u.user}: ${u.invEquipo ? 'autorizado para registrar a su equipo de inventariadores en Planificación' : 'ya no puede registrar inventariadores'}`, ok === false ? 'warn' : 'ok', 5000); }
   finally { chk.disabled = false; } }
 
+/* ---------- Saneamiento contable 1503: data propia, ajena al inventario ----------
+   El inventario valorizado que se importa en «Procesar reporte patrimonial» se guarda en S.sanInv (por entidad) y
+   todas las opciones del módulo trabajan sobre esa copia. El inventario de los usuarios (S.inv) no se toca. */
+const SAN_VIEWS = new Set(['procesar', 'analisis', 'correccion', 'reclasificacion', 'depuracion', 'notas', 'conc-san']);
+const SAN_REPS = ['procesado', 'analisis1503'];
+let SAN_ON = false;
+function withSan(fn) { if (SAN_ON || !S) return fn(); const inv = S.inv; invalidate(); S.inv = Array.isArray(S.sanInv) ? S.sanInv : (S.sanInv = []); SAN_ON = true;
+  try { return fn(); } finally { S.sanInv = S.inv; S.inv = inv; SAN_ON = false; invalidate(); } }
+function sanEl(v) { ['onclick', 'onchange', 'oninput', 'onkeyup', 'onkeydown', 'onfocusout'].forEach(k => { const f = v[k]; if (typeof f === 'function') v[k] = e => withSan(() => f.call(v, e)); }); }
+{ const _e = REP.exportar; REP.exportar = (...a) => SAN_VIEWS.has(CUR) || SAN_REPS.includes(a[0]) ? withSan(() => _e(...a)) : _e(...a); }
+
 /* ---------- Eventos globales ---------- */
 document.addEventListener('click', async e => {
   if (e.target.closest('[data-close]')) return closeModal();
@@ -5635,8 +5657,8 @@ document.addEventListener('click', async e => {
     if (key === 'notas' && arg) { const [k, v] = arg.split(':'); a = k === 'id' ? NOTAS().filter(n => n.id === +v) : NOTAS().filter(n => n.tipo === v); }
     toast(x.dataset.x === 'xlsx' ? 'Generando Excel…' : x.dataset.x === 'view' ? 'Abriendo vista PDF…' : 'Preparando impresión…', x.dataset.x === 'xlsx' ? 'xls' : 'pdf', 1500);
     setTimeout(() => REP.exportar(key, x.dataset.x, a), 30); return; }
-  const a = e.target.closest('[data-a]'); if (a) { const fn = VIEWS[CUR]?.act?.[a.dataset.a] || GLOBAL_ACT[a.dataset.a] || GLOBAL_ACT_EXTRA[a.dataset.a]; if (fn) { try { await fn(a, e); } catch (er) { console.error(er); toast(er.message, 'bad'); } } return; }
-  VIEWS[CUR]?.click?.(e);
+  const a = e.target.closest('[data-a]'); if (a) { const fn = VIEWS[CUR]?.act?.[a.dataset.a] || GLOBAL_ACT[a.dataset.a] || GLOBAL_ACT_EXTRA[a.dataset.a]; if (fn) { try { await (SAN_VIEWS.has(CUR) ? withSan(() => fn(a, e)) : fn(a, e)); } catch (er) { console.error(er); toast(er.message, 'bad'); } } return; }
+  if (VIEWS[CUR]?.click) SAN_VIEWS.has(CUR) ? withSan(() => VIEWS[CUR].click(e)) : VIEWS[CUR].click(e);
 });
 document.addEventListener('change', async e => {
   const f = e.target.closest('[data-file]'); if (!f || !f.files?.[0]) return; const file = f.files[0], key = f.dataset.file; f.value = '';
