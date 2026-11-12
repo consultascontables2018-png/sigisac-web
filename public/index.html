@@ -3283,8 +3283,8 @@ async function netDb() {
   const API = '/api/db';
   var ping = null; for (const ms of [6000, 12000]) { /* el primer llamado al servidor puede tardar (arranque en frío): se reintenta con más espera */
     try { const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), ms); const r = await fetch(API + '?c=_ping', { signal: ctl.signal, cache: 'no-store' }); clearTimeout(tm);
-      if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) return null; /* este sitio no tiene base central */
-      ping = await r.json(); if (!ping || ping.sigisac !== 1) return null; break; } catch (e) { ping = null; } }
+      if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) { USR.dbErr = r.ok ? 'el sitio respondió sin la función de base central (/api/db)' : `el servidor respondió con error HTTP ${r.status}`; return null; } /* este sitio no tiene base central */
+      ping = await r.json(); if (!ping || ping.sigisac !== 1) { USR.dbErr = 'respuesta no reconocida de /api/db'; return null; } USR.dbErr = ''; break; } catch (e) { ping = null; USR.dbErr = 'el servidor no respondió a tiempo'; } }
   if (!ping) return null;
   const AUTH = () => NET.tok ? { Authorization: 'Bearer ' + NET.tok } : {};
   const C = new Map(), subs = new Set(); let timer = null;
@@ -3327,7 +3327,7 @@ async function usrInit() {
   if (!db && /^https?:$/.test(location.protocol)) { USR.reint = (USR.reint || 0) + 1; if (USR.reint <= 20) setTimeout(usrReconectar, 30000); }
   usrConectar(db); }
 /* Si la base central no respondió al abrir (sin conexión o servidor arrancando), se vuelve a intentar sola */
-async function usrReconectar() { if (USR.db) return; const db = await netDb(); if (!db) { if (++USR.reint <= 20) setTimeout(usrReconectar, 30000); return; }
+async function usrReconectar(manual) { if (USR.db) return; const db = await netDb(); if (!db) { if (manual === true) { usrBadge(); return toast('La base central aún no responde' + (USR.dbErr ? ': ' + USR.dbErr : ''), 'warn', 6000); } setTimeout(usrReconectar, ++USR.reint <= 20 ? 30000 : 120000); usrBadge(); return; }
   usrConectar(db); toast('Base central conectada: sus datos se sincronizan en todos sus dispositivos', 'ok', 5000); }
 function usrConectar(db) {
   if (db) { USR.db = db; setTimeout(lgDbEstado, 0); setTimeout(() => { if (SESSION) wsWatch(); }, 0); try { USR.unsub = db.collection('usuarios').onSnapshot(s => usrApply(s).catch(console.error), () => { USR.ok = false; usrBadge(); }); } catch (e) { console.error(e); } }
@@ -3390,13 +3390,13 @@ function usrEstado() {
   if (USR.db && USR.ok) return { on: true, t: 'Sincronización en tiempo real activa', d: USR.ro ? 'Su acceso es de solo lectura: ve los usuarios, pero solo el propietario o un editor puede registrarlos.' : 'Los usuarios, claves y módulos que registre aquí se reconocen al instante en cualquier otro ordenador que abra este SIGISAC.' };
   if (SRV.ok && SRV.token && USR.srvOk) return { on: true, t: 'Sincronizado con el servidor SIGISAC', d: 'Cada equipo de la red consulta el servidor cada 15 segundos y al iniciar sesión: los usuarios nuevos se reconocen automáticamente.' };
   if (SRV.ok && !SRV.token) return { on: false, t: 'Servidor SIGISAC disponible', d: 'Inicie sesión con un usuario del servidor para compartir los usuarios con los demás equipos.' };
-  if (USR.db?.netlify && USR.db.auth && !NET.tok) return { on: false, t: 'Base central disponible: ingrese nuevamente', d: 'Cierre sesión e ingrese con su usuario y clave para activar la sincronización en tiempo real con todos sus dispositivos.' };
+  if (USR.db?.netlify && USR.db.auth && !NET.tok) return { on: false, t: 'Base central disponible', d: 'Confirme su contraseña para activar la sincronización en tiempo real con todos sus dispositivos.', act: true };
   if (USR.db?.netlify && NET.tok && WSYNC.estado === 'ok') return { on: true, t: 'Base central activa · tiempo real', d: 'Sus usuarios, entidades y avances se guardan en la base central del sitio y se reconocen al instante en cualquier dispositivo, en cualquier momento.' };
   if (USR.db) return { on: false, t: 'Conectando con la base central…', d: 'Los cambios se enviarán al reconectar.' };
   if (!/^https?:$/.test(location.protocol)) return { on: false, t: 'Solo este equipo (archivo local)', d: 'Está abriendo SIGISAC como archivo en este ordenador. Ingrese desde el enlace publicado (segisacerp.netlify.app) para que los usuarios accedan desde cualquier dispositivo y en tiempo real.' };
-  return { on: false, t: 'Reconectando con la base central…', d: 'No se pudo conectar con la base central de este sitio; se reintenta automáticamente cada 30 segundos. Mientras tanto, los cambios se guardan en este equipo.' }; }
+  return { on: false, t: 'Reconectando con la base central…', d: `No se pudo conectar con la base central de ${location.host}${USR.dbErr ? ' (' + USR.dbErr + ')' : ''}. Se reintenta solo cada 30 segundos; mientras tanto, los cambios se guardan en este equipo.`, btn: true }; }
 function usrBadge() { const el = $('#usrSync'); if (!el) return; const e = usrEstado(), p = USERS.filter(u => u.pend).length;
-  el.className = 'usr-sync ' + (e.on ? 'on' : 'off'); el.innerHTML = `<span class="dot"></span><div><b>${h(e.t)}</b><span>${h(e.d)}${p ? ` · ${p} cambio(s) pendiente(s) de enviar` : ''}${USR.last ? ` · actualizado ${USR.last.toLocaleTimeString('es-PE')}` : ''}</span></div>`; }
+  el.className = 'usr-sync ' + (e.on ? 'on' : 'off'); el.innerHTML = `<span class="dot"></span><div><b>${h(e.t)}</b><span>${h(e.d)}${p ? ` · ${p} cambio(s) pendiente(s) de enviar` : ''}${USR.last ? ` · actualizado ${USR.last.toLocaleTimeString('es-PE')}` : ''}</span></div>${e.btn ? `<button class="mini" data-a="usrReint" style="margin-left:auto;flex:none">${ic('rotate-ccw')}Reintentar ahora</button>` : ''}${e.act ? `<button class="mini" data-a="netActivar" style="margin-left:auto;flex:none;--c:var(--ok)">${ic('key-round')}Activar sincronización</button>` : ''}`; }
 
 /* ---------- Seguridad: equipos autorizados, alertas y notificaciones en tiempo real ----------
    Cada navegador tiene un identificador de equipo propio. El primer equipo donde ingresa un usuario queda autorizado;
@@ -5273,13 +5273,25 @@ const WT = () => USR.db?.netlify ? WT_NET : WT_CL;
 /* ---- Estado visible de la base central ---- */
 function wsEstado(e, msg = '') { WSYNC.estado = e; WSYNC.err = msg; const bar = $('#wsBar'); if (!bar) return;
   const T = { cargando: ['info', 'Cargando su información desde la base central…', ''], error: ['bad', msg || 'No se pudo conectar con la base central.', `<button class="mini" data-a="wsReintentar">${ic('rotate-ccw')}Reintentar</button>`],
-    auth: ['warn', msg || 'Su sesión con la base central venció.', `<button class="mini" data-a="wsReingresar">${ic('log-in')}Ingresar nuevamente</button>`] }[e];
+    auth: ['warn', msg || 'Su sesión con la base central venció.', `<button class="mini" data-a="netActivar">${ic('key-round')}Activar sincronización</button>`] }[e];
   bar.hidden = !T || !SESSION; if (T) { bar.className = 'ws-bar ' + T[0]; bar.innerHTML = `${e === 'cargando' ? '<i class="ws-spin"></i>' : ic(e === 'auth' ? 'key-round' : 'triangle-alert')}<span>${h(T[1])}</span>${T[2]}`; }
   const ch = $('#entLbl'); if (ch && e === 'cargando' && !S.cfg.entidad?.nombre) ch.textContent = 'Cargando entidades…';
   if (typeof usrBadge === 'function') usrBadge();
   const dm = $('.side-foot .dim'); if (dm) dm.textContent = SESSION && USR.db && e !== 'auth' && e !== 'local' ? 'Sus datos se guardan en la base central y se sincronizan en todos sus dispositivos.' : 'Los datos viven en este navegador. Exporte respaldos en Configuración › Data.'; }
 function wsGuardado(txt, cls) { const el = $('#saveState'); if (el) { el.textContent = txt; el.className = 'save ' + cls; } }
 GLOBAL_ACT_EXTRA.wsReintentar = () => { wsStop(); wsWatch(); };
+GLOBAL_ACT_EXTRA.usrReint = () => usrReconectar(true);
+/* Activa la sesión con la base central sin cerrar SIGISAC: basta confirmar la contraseña */
+GLOBAL_ACT_EXTRA.netActivar = () => { if (!SESSION) return logout();
+  const body = modal('Activar sincronización en tiempo real', `<p class="muted" style="margin:0 0 10px">Confirme la contraseña de <b>${h(SESSION.nombre || SESSION.user)}</b> para conectar este equipo con la base central. Sus datos quedarán disponibles en cualquier dispositivo.</p>
+    <form id="netActF" autocomplete="off"><div class="field"><label for="netActP">Contraseña</label><div class="input">${ic('lock-keyhole')}<input id="netActP" type="password" autocomplete="current-password"></div></div><div class="err" id="netActE" style="margin-top:6px"></div></form>`,
+    `<button class="mini ghost" data-close>Cancelar</button><button class="btn-glow" form="netActF" type="submit">${ic('key-round')}Activar</button>`, { icon: 'key-round' });
+  setTimeout(() => $('#netActP')?.focus(), 50);
+  $('#netActF').onsubmit = async ev => { ev.preventDefault(); const pw = $('#netActP').value; if (!pw) return; $('#netActE').textContent = 'Verificando…';
+    if (!USR.db) await usrReconectar(true); const r = await netLogin(SESSION.user, pw);
+    if (!r.ok) { $('#netActE').textContent = r.status === 401 ? 'Contraseña incorrecta o su usuario no está registrado en la base central (pida al administrador que lo guarde en Autorización).' : 'No se pudo conectar: ' + (r.error || 'sin conexión'); return; }
+    const { inv, admin, ...pf } = r.perfil || {}; const i = USERS.findIndex(x => x.user === SESSION.user); if (i >= 0 && pf.clave) USERS[i] = { ...USERS[i], ...pf }; mutate();
+    closeModal(); wsStop(); wsWatch(); usrBadge(); toast('Sincronización en tiempo real activada', 'ok', 4000); }; };
 GLOBAL_ACT_EXTRA.wsReingresar = () => logout();
 function wsErr(e) { if (e?.status === 401) { NET.tok = ''; netGuardarTok(); wsEstado('auth', e.message); return; } if (e?.status === 403) return wsEstado('error', e.message || 'Sin permiso para esta base de trabajo.'); wsEstado('error', 'No se pudo conectar con la base central' + (e?.message ? ': ' + e.message : '') + '. Sus cambios quedan guardados en este equipo y se enviarán al reconectar.'); }
 
@@ -5316,7 +5328,7 @@ async function wsPull(key, m, forzar) { const st = JSON.parse(await LIB.gunzipB6
   if (sucio && !forzar) wsSchedule(800); else if (hs && (await wsHash(wsJson())) !== hs) wsSchedule(300); return true; }
 /* Al ingresar: consulta la base central, muestra «cargando» y solo dice «sin entidades» si la consulta confirma que no hay */
 async function wsWatch() { wsDiario(); if (!SESSION) return; if (!USR.db) { if (USR.initDone) wsEstado('local'); return; }
-  if (USR.db.netlify && USR.db.auth && !NET.tok) return wsEstado('auth', NET.err || 'Para ver su información en cualquier dispositivo, ingrese nuevamente con su usuario y clave.');
+  if (USR.db.netlify && USR.db.auth && !NET.tok) return wsEstado('auth', NET.err || 'Confirme su contraseña para activar la sincronización en tiempo real con todos sus dispositivos.');
   const key = WS_KEY; if (WSYNC.key === key && WSYNC.unsub) return; wsStop(); WSYNC.key = key;
   const loc = (await IDB.get('wsync:' + key)) || {}; WSYNC.ver = loc.ver || ''; WSYNC.t = loc.t || ''; WSYNC.hash = loc.hash || '';
   wsEstado('cargando'); let primera = true;
