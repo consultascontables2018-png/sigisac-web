@@ -1,6 +1,6 @@
 const {chromium}=require('playwright');(async()=>{const b=await chromium.launch();const errs=[];const B='http://localhost:8810';
 const page=async(n)=>{const p=await (await b.newContext()).newPage();p.on('pageerror',e=>errs.push(n+':'+e.message));await p.goto(B+'/');await p.waitForTimeout(3000);return p;};
-const login=async(p,u,pw,w=5000)=>{await p.fill('#lg-user',u);await p.fill('#lg-pass',pw);await p.click('#loginForm [type=submit]');await p.waitForTimeout(w);};
+const login=async(p,u,pw,w=5000)=>{await p.click('#lg-user');await p.fill('#lg-user',u);await p.click('#lg-pass');await p.fill('#lg-pass',pw);await p.click('#loginForm [type=submit]');await p.waitForTimeout(w);};
 const V=await page('V');await login(V,'victoria','v1');
 console.log('crea inventariador:',await V.evaluate(async()=>{const x={user:'inv1',nombre:'INVENTARIADOR UNO',clave:await claveHash('i1'),tipo:'inventario',padre:'victoria',ws:WS_KEY,modulos:['Inventario físico/campo']};USERS.push(x);mutate();const r=await usrPush(x);return String(r);}));
 const I=await page('I');await login(I,'inv1','i1',7000);

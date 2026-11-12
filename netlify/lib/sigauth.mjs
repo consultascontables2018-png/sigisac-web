@@ -46,8 +46,18 @@ export async function ingresar(user, pass) {
   user = String(user || "").trim(); if (!user || !pass) return null; const docs = await usuarios();
   let cands = Object.values(docs).filter(x => x && (x.user === user || (x.dni && x.dni === user) || (x.correo && x.correo.toLowerCase() === user.toLowerCase())));
   for (const u of cands) if (!u.bloq && await claveOk(pass, u.clave)) return perfil(u);
-  if (user === "admin" && !adminDe(docs) && pass === ADMIN0_PASS) return perfil(ADMIN0);
+  if (user === "admin" && !adminDe(docs) && pass === ADMIN0_PASS) return perfil(await crearAdmin(pass));
   return null;
+}
+/* Primera vez: el administrador inicial queda registrado en la base central con su clave cifrada (PBKDF2) */
+async function crearAdmin(pass) {
+  const salt = randomBytes(16), k = await crypto.subtle.importKey("raw", enc.encode(pass), "PBKDF2", false, ["deriveBits"]);
+  const dk = Buffer.from(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt, iterations: 120000 }, k, 256));
+  const doc = { ...ADMIN0, clave: `pbkdf2_sha256$120000$${salt.toString("base64")}$${dk.toString("base64")}`, upd: new Date().toISOString(), ws: "state" };
+  for (let i = 0; i < 8; i++) { const r = await dbStore().getWithMetadata("col/usuarios", { type: "json" }); const cur = r?.data || { v: 0, docs: {} };
+    const ya = adminDe(cur.docs); if (ya) return ya; cur.docs.admin = doc; cur.v = (cur.v || 0) + 1;
+    const w = await dbStore().setJSON("col/usuarios", cur, r?.etag ? { onlyIfMatch: r.etag } : { onlyIfNew: true }); if (w?.modified !== false) return doc; }
+  return doc;
 }
 export async function emitir(u) { const p = { u: u.user, h: huella(u.clave), exp: Date.now() + 12 * 3600 * 1000 }; const b = Buffer.from(JSON.stringify(p)).toString("base64url"); return { token: b + "." + await hmac(b), exp: p.exp }; }
 

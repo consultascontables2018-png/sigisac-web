@@ -1,6 +1,6 @@
 const {chromium}=require('playwright');(async()=>{const b=await chromium.launch();const errs=[];const B='http://localhost:8810';
 const page=async(n)=>{const p=await (await b.newContext({viewport:{width:1400,height:860}})).newPage();p.on('pageerror',e=>errs.push(n+':'+e.message));p.on('console',m=>{if(m.type()==='warning'&&/ws/.test(m.text()))errs.push(n+':'+m.text())});await p.goto(B+'/');await p.waitForTimeout(3000);return p;};
-const login=async(p,u,pw,w=2500)=>{await p.fill('#lg-user',u);await p.fill('#lg-pass',pw);await p.click('#loginForm [type=submit]');await p.waitForTimeout(w);};
+const login=async(p,u,pw,w=2500)=>{await p.click('#lg-user');await p.fill('#lg-user',u);await p.click('#lg-pass');await p.fill('#lg-pass',pw);await p.click('#loginForm [type=submit]');await p.waitForTimeout(w);};
 const st=p=>p.evaluate(()=>({ent:S.cfg.entidad.nombre,dir:S.cfg.entidad.direccion||'',base:S.base.length,inv:S.inv.length,ents:Object.keys(S.ents||{}).length,save:$('#saveState').textContent,bar:$('#wsBar').hidden?'':$('#wsBar').innerText,modal:$('#modal').hidden?'':$('#modal').innerText.split('\n')[0],estado:WSYNC.estado,tok:!!NET.tok}));
 const t0=Date.now(),T=()=>((Date.now()-t0)/1000).toFixed(1)+'s';
 // 1 admin creates users

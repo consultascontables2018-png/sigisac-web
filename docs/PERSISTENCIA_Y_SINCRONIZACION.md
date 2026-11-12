@@ -104,6 +104,10 @@ Se usaron las funciones reales, Netlify Blobs simulado en memoria y navegadores 
 | Datos de la primera versión (`wsman` / `wsd_*`) | Migrados y visibles al ingresar |
 | Guardar inventario (Campo) | «Guardado correctamente (confirmado por el servidor)» |
 | Modo archivo local (sin servidor) | Funciona como antes, solo en el equipo |
+| Datos guardados solo en el navegador (sin conexión) y luego con conexión | Se migran a la base central sin pérdidas: entidad, aperturas 2025/2026, 150 bienes, 40 verificados |
+| Otro dispositivo, mismo usuario | Recupera entidad, aperturas, inventario y avances |
+| Avance de Campo en un dispositivo / apertura 2027 en otro | Llegan al otro dispositivo sin recargar; 150/150 bienes, sin duplicados |
+| Primer ingreso del administrador en un sitio nuevo | El servidor registra al administrador con su clave cifrada y la sesión queda válida |
 
 Para repetirlas: `tests/ejecutar.sh` (Node 18+ y Playwright con Chromium).
 

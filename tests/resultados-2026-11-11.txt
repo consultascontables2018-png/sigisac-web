@@ -1,19 +1,19 @@
 listo
-7.7s X admin: {"ent":"MUNICIPALIDAD DISTRITAL DE EL TAMBO","dir":"Av. Mariscal Castilla N° 1051","base":4964,"inv":5410,"ents":1,"save":"Guardado en este navegador","bar":"","modal":"","estado":"","tok":true}
-17.3s A al ingresar: {"ent":"","dir":"","base":0,"inv":0,"ents":1,"save":"Guardado correctamente","bar":"","modal":"No tienes entidades registradas","estado":"ok","tok":true}
-21.3s A guardado: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"","base":60000,"inv":300,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
-  manifiesto: {"n":2,"size":1050008,"nb":60305,"nom":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","t":"2026-11-12T02:11:45.348Z"}
-26.1s B durante carga: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"","base":60000,"inv":300,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
-27.3s B cargado: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"","base":60000,"inv":300,"ents":1,"save":"Guardando en la base central…","bar":"","modal":"","estado":"ok","tok":true}
-32.6s A recibe cambio de B: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"JR. LIMA 123 - MODIFICADO EN B","base":60000,"inv":300,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true} MALO
-38.2s B recibe 2da entidad: {"ent":"UGEL PRUEBA","dir":"","base":0,"inv":0,"ents":2,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
-46.9s C otra cuenta: {"ent":"","dir":"","base":0,"inv":0,"ents":1,"save":"Guardado correctamente","bar":"","modal":"No tienes entidades registradas","estado":"ok","tok":true}
+7.8s X admin: {"ent":"MUNICIPALIDAD DISTRITAL DE EL TAMBO","dir":"Av. Mariscal Castilla N° 1051","base":4964,"inv":5410,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
+17.6s A al ingresar: {"ent":"","dir":"","base":0,"inv":0,"ents":1,"save":"Guardado correctamente","bar":"","modal":"No tienes entidades registradas","estado":"ok","tok":true}
+21.6s A guardado: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"","base":60000,"inv":300,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
+  manifiesto: {"n":2,"size":1050020,"nb":60305,"nom":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","t":"2026-11-12T03:24:42.536Z"}
+26.6s B durante carga: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"","base":60000,"inv":300,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
+27.6s B cargado: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"","base":60000,"inv":300,"ents":1,"save":"Guardando en la base central…","bar":"","modal":"","estado":"ok","tok":true}
+33.4s A recibe cambio de B: {"ent":"MUNICIPALIDAD PROVINCIAL DE PRUEBA","dir":"JR. LIMA 123 - MODIFICADO EN B","base":60000,"inv":300,"ents":1,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true} MALO
+38.3s B recibe 2da entidad: {"ent":"UGEL PRUEBA","dir":"","base":0,"inv":0,"ents":2,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
+47.3s C otra cuenta: {"ent":"","dir":"","base":0,"inv":0,"ents":1,"save":"Guardado correctamente","bar":"","modal":"No tienes entidades registradas","estado":"ok","tok":true}
   C lee base de victoria: 403 No tiene permiso para ver esta base de trabajo.
   C escribe base de victoria: 403 No tiene permiso para modificar esta base de trabajo.
   C se sube privilegios: cargo=Jefe de Patrimonio admin=false
   C cambia clave de victoria: Solo puede administrar sus propios usuarios de inventario
   sin sesión /api/db usuarios: 401  claves expuestas a C: false
-56.3s A reingreso: {"ent":"UGEL PRUEBA","dir":"","base":0,"inv":0,"ents":2,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
+57.1s A reingreso: {"ent":"UGEL PRUEBA","dir":"","base":0,"inv":0,"ents":2,"save":"Guardado correctamente","bar":"","modal":"","estado":"ok","tok":true}
 
 crea inventariador: true
 inventariador ve: {"ws":"ws-victoria","ent":"UGEL PRUEBA","ents":2,"base":0,"est":"ok"}
@@ -45,6 +45,15 @@ Ingresar nuevamente
 legado público: 403
 
 guardar inventario: Guardado correctamente | MUNICIPALIDAD PROVINCIAL DE PRUEBA · 300 bienes verificados · 300 en inventario. | Guardado en este navegador | Copia de seguridad recuperable (Configuración › Data › Recuperar base de trabajo) | Guardado correctamente en la base central (confirmado por el servidor) | Aceptar | Descargar respaldo .json
-recuperar: Recuperar base de trabajo | Versiones de su base guardadas en la nube y en este navegador. Al restaurar una, la base actual se guarda antes como copia, así que puede volver atrás. | ORIGEN	FECHA	ENTIDADES	REGISTROS	 | En la nube actual	11/11/2026, 9:13:37 p. m.	MUNICIPALIDAD PROVINCIAL DE PRUEBA · UGEL PRUEBA | 	60,310	 | Ver | Copia en este navegador	11/11/2026, 9:13:36 p. m.	MUNICIPALIDAD PROVINCIAL DE PRUEBA · UGEL PRUEBA | Guardar inventario (Campo) | 	60,310	 | Ver | En la nube	11/11/2026, 9:12:19 p. m.	UGEL
+recuperar: Recuperar base de trabajo | Versiones de su base guardadas en la nube y en este navegador. Al restaurar una, la base actual se guarda antes como copia, así que puede volver atrás. | ORIGEN	FECHA	ENTIDADES	REGISTROS	 | En la nube actual	11/11/2026, 10:26:36 p. m.	MUNICIPALIDAD PROVINCIAL DE PRUEBA · UGEL PRUEBA | 	60,310	 | Ver | Copia en este navegador	11/11/2026, 10:26:35 p. m.	MUNICIPALIDAD PROVINCIAL DE PRUEBA · UGEL PRUEBA | Guardar inventario (Campo) | 	60,310	 | Ver | En la nube	11/11/2026, 10:25:16 p. m.	U
 modo archivo: {"ent":"MUNICIPALIDAD DISTRITAL DE EL TAMBO","save":"Guardado en este navegador","bar":true,"est":"local"}
 errores: 
+X: {"tok":true,"u":"admin","err":""}
+L solo navegador: {"ent":"MUNICIPALIDAD LOCAL SIN NUBE","ents":1,"periodos":"2025:CERRADO,2026:APERTURADO","inv":150,"verif":40,"est":"auth","save":"Guardado en este navegador","tok":false}
+L con base central: {"ent":"MUNICIPALIDAD LOCAL SIN NUBE","ents":1,"periodos":"2025:CERRADO,2026:APERTURADO","inv":150,"verif":40,"est":"ok","save":"Guardado correctamente","tok":true}
+M recupera: {"ent":"MUNICIPALIDAD LOCAL SIN NUBE","ents":1,"periodos":"2025:CERRADO,2026:APERTURADO","inv":150,"verif":40,"est":"ok","save":"Guardado correctamente","tok":true}
+L recibe avance de M: {"ent":"MUNICIPALIDAD LOCAL SIN NUBE","ents":1,"periodos":"2025:CERRADO,2026:APERTURADO","inv":150,"verif":60,"est":"ok","save":"Guardado correctamente","tok":true}
+M recibe apertura de L: {"ent":"MUNICIPALIDAD LOCAL SIN NUBE","ents":1,"periodos":"2025:CERRADO,2026:APERTURADO,2027:APERTURADO","inv":150,"verif":60,"est":"ok","save":"Guardado correctamente","tok":true}
+versiones en la nube: 3  bienes únicos M: 150/150
+
+exit 0
