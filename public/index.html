@@ -136,6 +136,10 @@ h1,h2,h3{margin:0}
 .card-h{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .card-h h3{font-family:var(--f-display);font-size:15px;font-weight:600;flex:1;min-width:160px}
 .card-h>.ic{color:var(--c)}
+.an-bars{display:grid;gap:8px}.an-b{display:grid;grid-template-columns:110px minmax(120px,1.2fr) 2fr 150px;gap:12px;align-items:center;font-size:12.5px}
+.an-d{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#334155}.an-t{height:12px;border-radius:99px;background:#eef2f7;overflow:hidden}.an-t i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,color-mix(in srgb,var(--k) 55%,#fff),var(--k))}
+.an-b b{text-align:right;font-variant-numeric:tabular-nums}.an-b b.pos{color:#b45309}.an-b b.neg{color:#be123c}.an-neg{color:#be123c;font-weight:700}
+@media (max-width:760px){.an-b{grid-template-columns:90px 1fr 110px}.an-t{display:none}}
 .rpp-h{display:grid;justify-items:center;gap:2px;margin:0 0 14px;text-align:center;font-family:Georgia,'Times New Roman',serif}
 .rpp-h b{font-size:20px;letter-spacing:.02em;color:#0b1533}.rpp-h span{font-size:15px;font-weight:700;color:#0b1533;letter-spacing:.04em}.rpp-h em{font-style:normal;font-size:14px;font-weight:700;color:#1e3a8a}
 .rpp-tot{display:flex;flex-wrap:wrap;gap:10px 22px;justify-content:flex-end;align-items:center;margin-top:12px;padding:12px 16px;border-radius:12px;background:linear-gradient(135deg,#eef4ff,#fff);border:1px solid var(--line)}
@@ -3777,7 +3781,7 @@ const SECTIONS = [
   ] },
   { label: 'Gestión del sinceramiento', mods: [
     { id: 'san', name: 'Saneamiento contable 1503', icon: 'scale', c: '--c-san', subs: [
-      { id: 'procesar', name: 'Procesar reporte patrimonial', icon: 'cog' }, { id: 'correccion', name: 'Corrección de cuentas', icon: 'pencil-ruler' }, { id: 'reclasificacion', name: 'Reclasificación', icon: 'arrow-left-right' },
+      { id: 'procesar', name: 'Procesar reporte patrimonial', icon: 'cog' }, { id: 'analisis', name: 'Análisis', icon: 'chart-bar-big' }, { id: 'correccion', name: 'Corrección de cuentas', icon: 'pencil-ruler' }, { id: 'reclasificacion', name: 'Reclasificación', icon: 'arrow-left-right' },
       { id: 'depuracion', name: 'Depuración', icon: 'eraser' }, { id: 'notas', name: 'Notas contables', icon: 'notebook-pen' }, { id: 'conc-san', name: 'Conciliación sinceramiento', icon: 'git-compare-arrows' }] },
     { id: 'siga', name: 'Implementación SIGA MP', icon: 'server-cog', c: '--c-siga', subs: [{ id: 'migracion', name: 'Migración SIGA MP', icon: 'database-zap' }] }] }
 ];
@@ -5051,6 +5055,22 @@ VIEWS.procesar = { render(el) {
     catch (e) { VIEWS.procesar.auto = false; toast(e.message, 'bad', 7000); } finally { b.disabled = false; } },
   run() { const n = autoCorrForce(); invalidate(); const ns = NOTAS(); mutate(`Saneamiento procesado: ${n} correcciones, ${ns.length} notas`); toast(`Proceso completo: ${fmtI(n)} correcciones aplicadas y ${ns.length} notas generadas`, 'ok', 4500); refresh(); } } };
 function autoCorrForce() { const a = S.cfg.autoCorr; S.cfg.autoCorr = true; const n = autoCorr(); S.cfg.autoCorr = a; return n; }
+
+
+/* ---------- Saneamiento: Análisis ----------
+   Explica la diferencia entre el saldo contable (balance SIAF) y el inventario físico valorizado de cada cuenta:
+   faltantes, sobrantes, correcciones / reclasificaciones y la parte aún no explicada. Se recalcula solo con cada carga. */
+VIEWS.analisis = { render(el) {
+  const m = M('analisis'), A = REP.ANALISIS(), T = k => A.reduce((a, r) => a + (+r[k] || 0), 0), dif = A.filter(r => Math.abs(r.d) >= 0.01), noexp = A.filter(r => Math.abs(r.res) >= 0.01);
+  const top = [...dif].sort((a, b) => Math.abs(b.d) - Math.abs(a.d)).slice(0, 8), mx = Math.max(1, ...top.map(r => Math.abs(r.d)));
+  el.innerHTML = `<div style="--c:var(${m.c});display:grid;gap:18px">
+  <div class="kpis">${kpi('Saldo contable (balance SIAF)', money(T('b')), `${fmtI(A.length)} cuentas`, '--c-san')}${kpi('Inventario físico valorizado', money(T('c')), `${fmtI(S.inv.length)} bienes`)}${kpi('Diferencia', money(T('d')), `${fmtI(dif.length)} cuentas con diferencia`, Math.abs(T('d')) < 0.05 ? '--ok' : '--warn')}${kpi('Faltantes', money(T('falt')), 'registrados y no ubicados', '--bad')}${kpi('Sobrantes', money(Math.abs(T('sobr'))), 'ubicados sin registro', '--warn')}${kpi('No explicado', money(T('res')), noexp.length ? `${fmtI(noexp.length)} cuentas por revisar` : 'todo explicado', Math.abs(T('res')) < 0.05 ? '--ok' : '--bad')}</div>
+  ${S.bal ? '' : `<div class="alert" style="--k:var(--warn)">${ic('triangle-alert')}<div>No hay balance SIAF cargado: el saldo contable aparece en cero. Cárguelo en Configuración › Data.</div></div>`}
+  ${card('Análisis de la diferencia por cuenta contable', 'chart-bar-big', '<div id="tblAn"></div><div id="totAn"></div>', '', exportBar('conciliacionAnalisis'))}
+  ${card('Cuentas con mayor diferencia', 'triangle-alert', top.length ? `<div class="an-bars">${top.map(r => `<div class="an-b"><span class="mono">${h(r.cod)}</span><span class="an-d">${h(r.den)}</span><span class="an-t"><i style="width:${Math.max(2, Math.abs(r.d) / mx * 100)}%;--k:var(${r.d > 0 ? '--warn' : '--bad'})"></i></span><b class="${r.d > 0 ? 'pos' : 'neg'}">${money(r.d)}</b></div>`).join('')}</div><p class="dim" style="margin:10px 0 0;font-size:12px">Diferencia = saldo contable − inventario físico. Positiva: el balance registra más que el inventario; negativa: el inventario supera al balance.</p>` : `<p class="muted">${ic('circle-check')} Ninguna cuenta tiene diferencia: el saldo contable coincide con el inventario físico.</p>`)}</div>`;
+  dataTable($('#tblAn'), { rows: A, pageSize: 50, search: true, cols: [{ h: 'Cuenta', k: 'cod', cls: 'mono' }, { h: 'Denominación', k: 'den' }, ...[['Saldo contable', 'b'], ['Inventario físico', 'c'], ['Diferencia', 'd'], ['Faltantes', 'falt'], ['Sobrantes', 'sobr'], ['Correcc. / reclasif.', 'corr'], ['No explicado', 'res']].map(([t, k]) => ({ h: t, a: 'r', sv: r => +r[k] || 0, html: k === 'res' || k === 'd', fn: r => k === 'res' || k === 'd' ? `<span class="${Math.abs(r[k]) < 0.01 ? 'dim' : k === 'res' ? 'an-neg' : ''}">${fmtN(r[k])}</span>` : fmtN(r[k]) }))] });
+  $('#totAn').innerHTML = (`<div class="rpp-tot"><span>TOTALES</span>${[['Saldo contable', 'b'], ['Inventario físico', 'c'], ['Diferencia', 'd'], ['No explicado', 'res']].map(([t, k]) => `<span><small>${t}</small><b>${fmtN(T(k))}</b></span>`).join('')}</div>`);
+} };
 
 /* ---------- Saneamiento: Corrección / Reclasificación / Depuración ---------- */
 const notaCard = (n) => `<details class="note" ${VIEWS.notas.open === n.id ? 'open' : ''}><summary><span class="badge" style="--k:var(--c-san)">N° ${String(n.id).padStart(3, '0')}</span><span style="flex:1;min-width:200px">${h(n.titulo)}</span>${n.efecto ? '' : '<span class="tag">Informativa</span>'}<span class="num">Debe ${fmtN(n.debe)} · Haber ${fmtN(n.haber)}</span></summary><div class="nb"><p class="muted" style="margin:0">${h(n.glosa)}</p><div class="tbl-wrap"><table class="asiento"><thead><tr><th>Cuenta</th><th>Denominación</th><th class="r">Debe</th><th class="r">Haber</th></tr></thead><tbody>${n.lineas.map(l => `<tr><td class="mono">${l.cta}</td><td>${h(l.den || '')}</td><td class="num">${l.debe ? fmtN(l.debe) : ''}</td><td class="num">${l.haber ? fmtN(l.haber) : ''}</td></tr>`).join('')}</tbody><tfoot><tr><td></td><td>TOTALES</td><td class="r num">${fmtN(n.debe)}</td><td class="r num">${fmtN(n.haber)}</td></tr></tfoot></table></div><div class="act" style="--c:var(--c-san)">${tools('notas', 'id:' + n.id)}</div></div></details>`;
