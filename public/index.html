@@ -1198,6 +1198,13 @@ header.top .menu-toggle{background:rgba(255,255,255,.14)!important;border-color:
  background:linear-gradient(100deg,#0284c7 0%,#0ea5e9 30%,#38bdf8 44%,#cff4ff 50%,#38bdf8 56%,#0ea5e9 70%,#0284c7 100%);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
  text-shadow:none;filter:drop-shadow(0 0 10px rgba(56,189,248,.65)) drop-shadow(0 0 26px rgba(14,165,233,.45)) drop-shadow(0 2px 1px rgba(3,105,161,.35));animation:btShine 3.2s linear infinite,btGlow 2.4s ease-in-out infinite}
 #boot .bt-3d::after,#boot .bt-3d::before{display:none}
+#boot .bt-3d{font-size:clamp(22px,6vw,96px);font-weight:700;letter-spacing:.04em;white-space:nowrap;
+ background:linear-gradient(100deg,#1e3a8a 0%,#1d4ed8 22%,#2563eb 38%,#60a5fa 46%,#e0edff 50%,#60a5fa 54%,#2563eb 62%,#1d4ed8 78%,#1e3a8a 100%);background-size:300% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;
+ filter:drop-shadow(0 0 10px rgba(59,130,246,.7)) drop-shadow(0 0 28px rgba(37,99,235,.5)) drop-shadow(0 2px 1px rgba(30,58,138,.4));animation:btShine 3.2s linear infinite,btGlowB 2.4s ease-in-out infinite}
+@keyframes btGlowB{50%{filter:drop-shadow(0 0 18px rgba(96,165,250,.95)) drop-shadow(0 0 46px rgba(59,130,246,.65)) drop-shadow(0 2px 1px rgba(30,58,138,.4))}}
+#boot .bt-c{color:#3b82f6;-webkit-text-fill-color:#3b82f6;filter:drop-shadow(0 0 6px rgba(59,130,246,.5))}
+#boot .bt-dots i{background:#2563eb;box-shadow:0 0 8px rgba(37,99,235,.85)}
+
 @keyframes btGlow{50%{filter:drop-shadow(0 0 16px rgba(56,189,248,.9)) drop-shadow(0 0 40px rgba(34,211,238,.6)) drop-shadow(0 2px 1px rgba(3,105,161,.35))}}
 #boot .spin{position:relative;width:76px;height:76px;margin:0 0 6px;border:0;border-radius:50%;
  background:conic-gradient(from 0deg,#22d3ee,#3b82f6,#8b5cf6,#ec4899,#f43f5e,#f59e0b,#facc15,#10b981,#22d3ee);
@@ -1207,6 +1214,9 @@ header.top .menu-toggle{background:rgba(255,255,255,.14)!important;border-color:
 #boot .bt-sp::before{content:"";position:absolute;width:96px;height:96px;border-radius:50%;background:conic-gradient(from 0deg,rgba(34,211,238,.5),transparent 25%,rgba(236,72,153,.4) 50%,transparent 75%,rgba(34,211,238,.5));-webkit-mask:radial-gradient(farthest-side,transparent 62%,#000 70%);mask:radial-gradient(farthest-side,transparent 62%,#000 70%);filter:blur(10px);animation:spin 2.2s linear infinite reverse,btHue 3s linear infinite}
 @keyframes btHue{to{filter:hue-rotate(360deg)}}
 #boot .bt-dots i{background:#0ea5e9;box-shadow:0 0 8px rgba(14,165,233,.8)}
+#boot .bt-dots i{background:#2563eb;box-shadow:0 0 8px rgba(37,99,235,.85)}
+#boot .spin{width:84px;height:84px}
+#boot .bt-c{color:#3b82f6;-webkit-text-fill-color:#3b82f6;filter:drop-shadow(0 0 6px rgba(59,130,246,.5))}
 @media (max-width:520px){#boot .bt-3d{letter-spacing:.04em}}
 
 /* Portada: lema bajo el logo */
