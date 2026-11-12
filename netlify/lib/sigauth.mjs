@@ -3,7 +3,8 @@
 // - Se emite un token firmado (HMAC-SHA256) que vence a las 12 h y queda invalidado si la clave cambia o el usuario se bloquea.
 // - Cada petición vuelve a leer el usuario en la base central, así un usuario eliminado o bloqueado pierde el acceso al instante.
 import { getStore } from "@netlify/blobs";
-import { timingSafeEqual, randomBytes } from "node:crypto";
+import { timingSafeEqual, randomBytes, webcrypto } from "node:crypto";
+const subtle = webcrypto.subtle; // compatible con cualquier versión de Node de Netlify (no depende del crypto global)
 
 export const H = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" };
 export const res = (o, s = 200) => new Response(JSON.stringify(o), { status: s, headers: H });
@@ -26,14 +27,14 @@ async function secreto() {
   if (!s) { await st.set("secret", randomBytes(32).toString("base64url"), { onlyIfNew: true }); s = await st.get("secret"); }
   return SECRET = s;
 }
-async function hmac(m) { const k = await crypto.subtle.importKey("raw", enc.encode(await secreto()), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return Buffer.from(await crypto.subtle.sign("HMAC", k, enc.encode(m))).toString("base64url"); }
+async function hmac(m) { const k = await subtle.importKey("raw", enc.encode(await secreto()), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); return Buffer.from(await subtle.sign("HMAC", k, enc.encode(m))).toString("base64url"); }
 const iguales = (a, b) => { const x = Buffer.from(String(a)), y = Buffer.from(String(b)); return x.length === y.length && timingSafeEqual(x, y); };
 const huella = clave => String(clave || "default").slice(-16);
 
 export async function claveOk(pass, clave) {
   try { const [alg, it, s, d] = String(clave || "").split("$"); if (alg !== "pbkdf2_sha256" || !(+it > 0)) return false;
-    const k = await crypto.subtle.importKey("raw", enc.encode(String(pass)), "PBKDF2", false, ["deriveBits"]);
-    const dk = Buffer.from(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: Buffer.from(s, "base64"), iterations: +it }, k, 256));
+    const k = await subtle.importKey("raw", enc.encode(String(pass)), "PBKDF2", false, ["deriveBits"]);
+    const dk = Buffer.from(await subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: Buffer.from(s, "base64"), iterations: +it }, k, 256));
     const ref = Buffer.from(d, "base64"); return ref.length === dk.length && timingSafeEqual(dk, ref); } catch { return false; }
 }
 export async function usuarios() { const c = await dbStore().get("col/usuarios", { type: "json" }); return c?.docs || {}; }

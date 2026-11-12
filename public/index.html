@@ -1226,9 +1226,9 @@ header.top .menu-toggle{background:rgba(255,255,255,.14)!important;border-color:
       <div class="lg-main">
         <h1 class="lg-hello" id="lgHola">¡Buenos días!</h1>
         <p class="lg-sub">Accede a tu cuenta para gestionar el inventario patrimonial, el saneamiento contable y la migración al SIGA MP.</p>
-        <div class="lg-field"><input id="lg-user" value="admin" autocomplete="username" placeholder=" " required><label for="lg-user"><svg class="ic"><use href="#i-user-round"/></svg>Usuario, DNI o correo</label></div>
-        <div class="lg-field"><input id="lg-pass" type="password" autocomplete="current-password" placeholder=" "><label for="lg-pass"><svg class="ic"><use href="#i-lock-keyhole"/></svg>Contraseña</label><button type="button" class="lg-eye" id="lgEye" aria-label="Mostrar contraseña"><svg class="ic"><use href="#i-eye"/></svg></button></div>
-        <div class="lg-row"><label class="lg-rem"><input type="checkbox" id="lgRem"><span>Recordarme</span></label><button type="button" class="lg-link" id="lgOlvido">¿Olvidaste tu contraseña?</button></div>
+        <div class="lg-field"><input id="lg-user" value="" autocomplete="off" autocapitalize="off" spellcheck="false" readonly placeholder=" " required><label for="lg-user"><svg class="ic"><use href="#i-user-round"/></svg>Usuario, DNI o correo</label></div>
+        <div class="lg-field"><input id="lg-pass" type="password" value="" autocomplete="new-password" readonly placeholder=" "><label for="lg-pass"><svg class="ic"><use href="#i-lock-keyhole"/></svg>Contraseña</label><button type="button" class="lg-eye" id="lgEye" aria-label="Mostrar contraseña"><svg class="ic"><use href="#i-eye"/></svg></button></div>
+        <div class="lg-row"><span></span><button type="button" class="lg-link" id="lgOlvido">¿Olvidaste tu contraseña?</button></div>
         <div class="err" id="lg-err"></div><div class="lg-db" id="lgDb" hidden></div>
         <div class="lg-btns"><button class="lg-go" type="submit"><span>Iniciar sesión</span><svg class="ic"><use href="#i-arrow-right"/></svg></button></div>
         <div class="login-hint" hidden></div>
@@ -3252,7 +3252,7 @@ async function netDb() {
     doc: path => { const i = String(path).indexOf('/'); return docRef(path.slice(0, i), path.slice(i + 1)); } };
   return db; }
 /* Portada: indica si este sitio tiene base compartida (usuarios reconocidos en cualquier dispositivo) */
-function lgDbEstado() { const el = $('#lgDb'); if (!el) return; if ($('#demoBar')) { el.hidden = true; return; } const on = !!USR.db || !!SRV.ok;
+function lgDbEstado() { const el = $('#lgDb'); if (el) el.hidden = true; return; if ($('#demoBar')) { el.hidden = true; return; } const on = !!USR.db || !!SRV.ok;
   el.hidden = false; el.className = 'lg-db ' + (on ? 'on' : 'off');
   el.innerHTML = on ? `<i></i><span><b>Base compartida activa${USR.db?.netlify ? ' · Netlify' : SRV.ok && !USR.db ? ' · servidor' : ''}</b>Los usuarios creados por el administrador ingresan desde cualquier dispositivo.</span>`
     : `<i></i><span><b>Sin base compartida</b>Los usuarios creados aquí solo funcionan en este dispositivo.</span>`; }
@@ -5383,7 +5383,7 @@ function bienvenida(u) { document.querySelector('.bv-toast')?.remove(); const d 
   document.body.appendChild(d); const fuera = () => { d.classList.add('out'); setTimeout(() => d.remove(), 320); }; d.querySelector('.bv-x').onclick = fuera; setTimeout(fuera, 5000); }
 /* Menú de usuario (avatar): cerrar sesión, cambiar usuario y cambiar clave */
 function loginHint() { const el = $('.login-hint'); if (el) el.hidden = true; } /* la clave inicial no se muestra en la portada */
-function logout(cambiar) { wsStop(); NET.tok = ''; netGuardarTok(); wsEstado('');  loginHint(); $('#usrMenu').hidden = true; $('#bellMenu').hidden = true; SESSION = null; segPresencia(); segBell(); try { sessionStorage.removeItem('sigisac-sess'); sessionStorage.removeItem('sigisac.tok'); } catch (e) { } if (typeof SRV !== 'undefined') SRV.token = ''; $('#login').hidden = false; $('#lg-pass').value = ''; $('#lg-err').textContent = ''; if (cambiar) { $('#lg-user').value = ''; setTimeout(() => $('#lg-user').focus(), 50); } else setTimeout(() => $('#lg-pass').focus(), 50); }
+function logout(cambiar) { wsStop(); NET.tok = ''; netGuardarTok(); wsEstado('');  loginHint(); $('#usrMenu').hidden = true; $('#bellMenu').hidden = true; SESSION = null; segPresencia(); segBell(); try { sessionStorage.removeItem('sigisac-sess'); sessionStorage.removeItem('sigisac.tok'); } catch (e) { } if (typeof SRV !== 'undefined') SRV.token = ''; $('#login').hidden = false; $('#lg-pass').value = ''; $('#lg-user').value = ''; $('#lg-err').textContent = ''; }
 function usrMenu() { const u = SESSION || {}, m = $('#usrMenu');
   m.innerHTML = `<div class="um-h"><span class="um-av">${h($('#avatar').textContent)}</span><div><b>${h(u.nombre || u.user || '')}</b><span>${h(u.user || '')}${u.cargo ? ' · ' + h(u.cargo) : ''}</span></div></div>
     <button class="um-i" data-um="clave">${ic('key-round')}<span><b>Cambiar clave</b><small>Actualice la contraseña de su usuario</small></span></button>
@@ -5421,8 +5421,15 @@ $('#lgMovil')?.addEventListener('click', () => lectorOpen());
 (function loginUI() {
   const hola = () => { const hr = new Date().getHours(), el = $('#lgHola'); if (el) el.textContent = hr < 12 ? '¡Buenos días!' : hr < 19 ? '¡Buenas tardes!' : '¡Buenas noches!'; };
   hola(); setInterval(hola, 60000);
-  try { const r = localStorage.getItem('sigisac.recordar'); if (r) { $('#lg-user').value = r; $('#lgRem').checked = true; } } catch (e) { }
-  $('#loginForm').addEventListener('submit', () => { try { if ($('#lgRem').checked) localStorage.setItem('sigisac.recordar', val('lg-user')); else localStorage.removeItem('sigisac.recordar'); } catch (e) { } }, true);
+  /* Portada limpia en cualquier equipo: ni usuario ni clave precargados (solo el usuario si la persona marcó «Recordarme» en este equipo).
+     Los campos quedan de solo lectura hasta que se tocan, así el navegador no los autocompleta por su cuenta. */
+  /* Los campos siempre empiezan vacíos en cualquier equipo: no se precarga usuario ni clave (se borra lo recordado antes) */
+  try { localStorage.removeItem('sigisac.recordar'); } catch (e) { }
+  let escribio = false; ['keydown', 'paste', 'input'].forEach(ev => $('#loginForm').addEventListener(ev, e => { if (e.isTrusted && (ev !== 'input' || e.inputType)) escribio = true; }, true));
+  const limpiar = () => { if (escribio) return; const u = $('#lg-user'), p = $('#lg-pass'); if (document.activeElement !== u) u.value = ''; if (document.activeElement !== p) p.value = ''; };
+  ['#lg-user', '#lg-pass'].forEach(sel => { const i = $(sel); if (!i) return; const abrir = () => i.removeAttribute('readonly'); i.addEventListener('focus', abrir); i.addEventListener('pointerdown', abrir); i.addEventListener('keydown', abrir); });
+  limpiar(); [150, 600, 1500, 3000, 5000].forEach(ms => setTimeout(limpiar, ms));
+  new MutationObserver(() => { if (!$('#login').hidden) { escribio = false; limpiar(); [300, 1500].forEach(ms => setTimeout(limpiar, ms)); $('#lg-user').setAttribute('readonly', ''); $('#lg-pass').setAttribute('readonly', ''); } }).observe($('#login'), { attributes: true, attributeFilter: ['hidden'] });
   $('#lgEye')?.addEventListener('click', () => { const i = $('#lg-pass'), v = i.type === 'password'; i.type = v ? 'text' : 'password'; $('#lgEye').innerHTML = ic(v ? 'eye-off' : 'eye'); $('#lgEye').setAttribute('aria-label', v ? 'Ocultar contraseña' : 'Mostrar contraseña'); i.focus(); });
   $('#lgOlvido')?.addEventListener('click', () => { $('#lg-err').innerHTML = `<span style="color:#1f2a44;font-weight:600">Solicite al administrador de SIGISAC que le asigne una nueva contraseña en Configuración › Autorización (editar usuario › Nueva contraseña).</span>`; });
   const S1 = $$('.lg-slide'), D = $$('.lg-dots button'); let k = 0, t = null;
