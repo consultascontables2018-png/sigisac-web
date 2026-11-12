@@ -3629,7 +3629,7 @@ const SECTIONS = [
   { label: 'Gestión del sinceramiento', mods: [
     { id: 'san', name: 'Saneamiento contable 1503', icon: 'scale', c: '--c-san', subs: [
       { id: 'procesar', name: 'Procesar reporte patrimonial', icon: 'cog' }, { id: 'correccion', name: 'Corrección de cuentas', icon: 'pencil-ruler' }, { id: 'reclasificacion', name: 'Reclasificación', icon: 'arrow-left-right' },
-      { id: 'depuracion', name: 'Depuración', icon: 'eraser' }, { id: 'notas', name: 'Notas contables', icon: 'notebook-pen' }, { id: 'conc-san', name: 'Conciliación final', icon: 'git-compare-arrows' }] },
+      { id: 'depuracion', name: 'Depuración', icon: 'eraser' }, { id: 'notas', name: 'Notas contables', icon: 'notebook-pen' }, { id: 'conc-san', name: 'Conciliación sinceramiento', icon: 'git-compare-arrows' }] },
     { id: 'siga', name: 'Implementación SIGA MP', icon: 'server-cog', c: '--c-siga', subs: [{ id: 'migracion', name: 'Migración SIGA MP', icon: 'database-zap' }] }] }
 ];
 const MODS = SECTIONS.flatMap(s => s.mods), SUB = {}; MODS.forEach(m => (m.subs || []).forEach(s => SUB[s.id] = { s, m }));
