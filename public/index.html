@@ -136,6 +136,13 @@ h1,h2,h3{margin:0}
 .card-h{display:flex;align-items:center;gap:10px;margin-bottom:14px;flex-wrap:wrap}
 .card-h h3{font-family:var(--f-display);font-size:15px;font-weight:600;flex:1;min-width:160px}
 .card-h>.ic{color:var(--c)}
+.ws-bar{position:fixed;top:78px;left:50%;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:10px;max-width:min(720px,92vw);padding:9px 14px;border-radius:14px;font-size:12.5px;font-weight:600;background:#fff;border:1px solid var(--line,#e2e8f0);box-shadow:0 12px 30px -14px rgba(15,23,42,.35)}
+.ws-bar.info{color:#1e3a8a;border-color:#bfdbfe;background:linear-gradient(135deg,#eff6ff,#fff)}
+.ws-bar.bad{color:#9f1239;border-color:#fecdd3;background:linear-gradient(135deg,#fff1f2,#fff)}
+.ws-bar.warn{color:#92400e;border-color:#fde68a;background:linear-gradient(135deg,#fffbeb,#fff)}
+.ws-bar .ic{width:16px;height:16px;flex:none}.ws-bar .mini{margin-left:4px}
+.ws-spin{width:15px;height:15px;border-radius:50%;border:2px solid #bfdbfe;border-top-color:#2563eb;animation:wsSp .8s linear infinite;flex:none}
+@keyframes wsSp{to{transform:rotate(360deg)}}
 .inv-sv{display:inline-flex;align-items:center;gap:8px;padding:9px 16px;border-radius:12px;border:0;cursor:pointer;font:700 12.5px/1 var(--f-ui,inherit);letter-spacing:.02em;color:#fff;background:linear-gradient(135deg,#059669,#10b981 55%,#34d399);box-shadow:0 6px 16px -6px rgba(5,150,105,.55),inset 0 1px 0 rgba(255,255,255,.35);transition:transform .15s,box-shadow .15s,filter .15s}
 .inv-sv:hover{transform:translateY(-1px);box-shadow:0 10px 22px -8px rgba(5,150,105,.6),inset 0 1px 0 rgba(255,255,255,.35);filter:saturate(1.1)}
 .inv-sv:disabled{opacity:.7;cursor:progress;transform:none}
@@ -1176,6 +1183,9 @@ header.top .menu-toggle{background:rgba(255,255,255,.14)!important;border-color:
  filter:drop-shadow(0 1px 0 #a5711a) drop-shadow(0 2px 0 #8a5d14) drop-shadow(0 3px 0 #6f4a10) drop-shadow(0 8px 12px rgba(30,41,90,.35));animation:bt3d 2.4s ease-in-out infinite}
 #boot .bt-3d::after{content:attr(data-t);position:absolute;inset:0;background:linear-gradient(110deg,transparent 35%,rgba(255,255,255,.85) 50%,transparent 65%);background-size:250% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;animation:btShine 2.6s linear infinite}
 #boot .bt-dots{display:flex;gap:6px;margin-top:4px}
+#boot .spin{width:54px;height:54px;border:0;border-radius:50%;background:conic-gradient(from 0deg,#22d3ee,#3b82f6,#8b5cf6,#ec4899,#f59e0b,#10b981,#22d3ee);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 5px),#000 calc(100% - 4px));mask:radial-gradient(farthest-side,transparent calc(100% - 5px),#000 calc(100% - 4px));box-shadow:none;filter:drop-shadow(0 0 8px rgba(56,189,248,.55));animation:spin .9s linear infinite,btHue 2.4s linear infinite;margin:0 0 10px}
+#boot .bt-c{font:700 22px/1.1 var(--f-body,system-ui),sans-serif;letter-spacing:.38em;padding-left:.38em;color:#38bdf8;background:linear-gradient(90deg,#0ea5e9,#67e8f9 45%,#e0f7ff 50%,#67e8f9 55%,#0ea5e9);background-size:220% 100%;-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent;filter:drop-shadow(0 0 6px rgba(56,189,248,.65)) drop-shadow(0 0 16px rgba(34,211,238,.35));animation:btShine 2.8s linear infinite}
+@keyframes btHue{to{filter:drop-shadow(0 0 8px rgba(56,189,248,.55)) hue-rotate(360deg)}}
 #boot .bt-dots i{width:7px;height:7px;border-radius:50%;background:#2563eb;opacity:.25;animation:btDot 1.2s ease-in-out infinite}
 #boot .bt-dots i:nth-child(2){animation-delay:.2s}#boot .bt-dots i:nth-child(3){animation-delay:.4s}
 @keyframes bt3d{50%{transform:translateY(-3px)}}
@@ -1243,6 +1253,7 @@ header.top .menu-toggle{background:rgba(255,255,255,.14)!important;border-color:
     <main class="view" id="view"></main>
   </div>
 </div>
+<div id="wsBar" class="ws-bar" hidden role="status" aria-live="polite"></div>
 <div id="modal" hidden></div>
 <div id="toasts" aria-live="polite"></div>
 
@@ -1846,7 +1857,7 @@ function wsAdopt(st) { const d = Object.getOwnPropertyDescriptor(st.cfg, 'usuari
 async function wsFlush() { clearTimeout(saveTimer); if (S) await IDB.set(WS_KEY, S); await IDB.set('usuarios', USERS); }
 function mutate(msg) {
   invalidate(); if (msg) log(msg);
-  clearTimeout(saveTimer); saveTimer = setTimeout(async () => { IDB.set('usuarios', USERS); if (typeof entregPublicar === 'function') entregPublicar(true); savedOk = await IDB.set(WS_KEY, S); if (typeof wsSchedule === 'function') wsSchedule(); const el = $('#saveState'); if (el) { el.textContent = savedOk ? 'Guardado en este navegador' : 'Sin almacenamiento: exporte un respaldo'; el.className = 'save ' + (savedOk ? 'ok' : 'warn'); } }, 600);
+  clearTimeout(saveTimer); saveTimer = setTimeout(async () => { IDB.set('usuarios', USERS); if (typeof entregPublicar === 'function') entregPublicar(true); savedOk = await IDB.set(WS_KEY, S); const cen = typeof wsCentral === 'function' && wsCentral() && !esInv(SESSION); if (cen) wsSchedule(); const el = $('#saveState'); if (el && !(cen && WSYNC.hash && WSYNC.subiendo)) { el.textContent = cen ? (WSYNC.listo ? 'Guardando en la base central…' : 'Cargando base central…') : savedOk ? 'Guardado en este navegador' : 'Sin almacenamiento: exporte un respaldo'; el.className = 'save ' + (cen || !savedOk ? 'warn' : 'ok'); } }, 600);
 }
 function log(msg) { S.log = S.log || []; S.log.unshift({ t: new Date().toISOString(), u: SESSION?.nombre || '', msg }); S.log = S.log.slice(0, 300); }
 
@@ -3178,16 +3189,28 @@ const usrRol = u => u.modulos?.includes('Todos') && /Administrador/i.test(u.carg
    Cuando SIGISAC se publica en su propio dominio (Netlify) no existe la base de Claude. Si el sitio tiene la función
    /api/db, este adaptador ofrece la misma interfaz (colecciones, documentos, consultas y avisos en vivo por sondeo cada
    pocos segundos), así usuarios, claves, alertas, mensajes, ingresos, entidades y Campo se comparten entre dispositivos. */
+/* ---- Sesión con la base central de Netlify (/api/ws): token firmado por el servidor; vive solo en esta pestaña ---- */
+const NET = { tok: '', exp: 0, user: '' };
+try { const t = JSON.parse(sessionStorage.getItem('sigisac.net') || 'null'); if (t?.tok && t.exp > Date.now()) Object.assign(NET, t); } catch (e) { }
+function netGuardarTok() { try { NET.tok ? sessionStorage.setItem('sigisac.net', JSON.stringify(NET)) : sessionStorage.removeItem('sigisac.net'); } catch (e) { } }
+async function netApi(method, q, body, texto) { const url = '/api/ws' + (q ? '?' + new URLSearchParams(q) : ''); let r;
+  try { r = await fetch(url, { method, cache: 'no-store', headers: { ...(body ? { 'Content-Type': 'application/json' } : {}), ...(NET.tok ? { Authorization: 'Bearer ' + NET.tok } : {}) }, body: body ? JSON.stringify(body) : undefined }); }
+  catch (e) { const er = new Error('sin conexión con el servidor'); er.status = 0; throw er; }
+  if (!r.ok) { let j = {}; try { j = await r.json(); } catch (e) { } const er = new Error(j.error || 'HTTP ' + r.status); er.status = r.status; er.body = j; throw er; }
+  return texto ? r.text() : r.json(); }
+async function netLogin(user, pass) { try { const j = await netApi('POST', null, { op: 'login', user, pass }); Object.assign(NET, { tok: j.token, exp: j.exp, user: j.perfil?.user || user }); netGuardarTok(); return { ok: true, perfil: j.perfil }; }
+  catch (e) { return { ok: false, status: e.status, error: e.message }; } }
 async function netDb() {
   if (!/^https?:$/.test(location.protocol)) return null;
   const API = '/api/db';
   try { const ctl = new AbortController(), tm = setTimeout(() => ctl.abort(), 5000); const r = await fetch(API + '?c=_ping', { signal: ctl.signal, cache: 'no-store' }); clearTimeout(tm);
-    if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) return null; const j = await r.json(); if (!j || j.sigisac !== 1) return null; } catch (e) { return null; }
+    if (!r.ok || !(r.headers.get('content-type') || '').includes('json')) return null; var ping = await r.json(); if (!ping || ping.sigisac !== 1) return null; } catch (e) { return null; }
+  const AUTH = () => NET.tok ? { Authorization: 'Bearer ' + NET.tok } : {};
   const C = new Map(), subs = new Set(); let timer = null;
   const col = c => C.get(c) || (C.set(c, { v: -1, docs: {} }), C.get(c));
-  async function pull(c) { const k = col(c); try { const r = await fetch(`${API}?c=${encodeURIComponent(c)}&v=${k.v}`, { cache: 'no-store' }); if (!r.ok) throw new Error('HTTP ' + r.status); const j = await r.json();
+  async function pull(c) { const k = col(c); try { if (ping.auth && !NET.tok) { const er = new Error('sesión requerida'); er.status = 401; throw er; } const r = await fetch(`${API}?c=${encodeURIComponent(c)}&v=${k.v}`, { cache: 'no-store', headers: AUTH() }); if (!r.ok) { const er = new Error('HTTP ' + r.status); er.status = r.status; throw er; } const j = await r.json();
       if (!j.same) { k.v = j.v; k.docs = j.docs || {}; return true; } return false; } catch (e) { k.err = e; throw e; } }
-  async function send(body) { const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), cache: 'no-store' });
+  async function send(body) { const r = await fetch(API, { method: 'POST', headers: { 'Content-Type': 'application/json', ...AUTH() }, body: JSON.stringify(body), cache: 'no-store' });
     if (!r.ok) { let m = 'HTTP ' + r.status; try { m = (await r.json()).error || m; } catch (e) { } throw new Error(m); } const j = await r.json(); const k = col(body.c);
     if (j.v != null) { if (body.op === 'set') k.docs[body.id] = body.data; else delete k.docs[body.id]; k.v = j.v; } emit(body.c); return j; }
   const docSnap = (id, d) => ({ id, exists: d != null, data: () => d == null ? undefined : JSON.parse(JSON.stringify(d)) });
@@ -3207,7 +3230,7 @@ async function netDb() {
     id, async get() { await pull(c); return docSnap(id, col(c).docs[id]); },
     set: data => send({ op: 'set', c, id, data: JSON.parse(JSON.stringify(data)) }), delete: () => send({ op: 'del', c, id }),
     onSnapshot(cb, err) { const s = { c, doc: id, cb, err }; subs.add(s); arm(); pull(c).then(() => cb(docSnap(id, col(c).docs[id]))).catch(e => err?.(e)); return () => subs.delete(s); } }; }
-  const db = { netlify: true,
+  const db = { netlify: true, auth: !!ping.auth,
     collection: c => Object.assign(query({ c, w: [], o: null, l: 0 }), { doc: id => docRef(c, String(id)) }),
     doc: path => { const i = String(path).indexOf('/'); return docRef(path.slice(0, i), path.slice(i + 1)); } };
   return db; }
@@ -3219,6 +3242,7 @@ function lgDbEstado() { const el = $('#lgDb'); if (!el) return; if ($('#demoBar'
 async function usrInit() {
   let db = null; try { db = await window.claude?.use?.('db'); } catch (e) { }
   if (!db) db = await netDb();
+  USR.initDone = true; if (!db && SESSION) { wsEstado('local'); wsBienvenida(true); }
   if (db) { USR.db = db; setTimeout(lgDbEstado, 0); setTimeout(() => { if (SESSION) wsWatch(); }, 0); try { USR.unsub = db.collection('usuarios').onSnapshot(s => usrApply(s).catch(console.error), () => { USR.ok = false; usrBadge(); }); } catch (e) { console.error(e); } }
   usrBadge(); }
 async function usrApply(snap) {
@@ -3226,7 +3250,7 @@ async function usrApply(snap) {
   if (snap.empty) { /* base vacía: se publica la lista de este equipo (primera vez) */
     if (!snap.metadata.fromCache && !USR.seeded) { USR.seeded = true; for (const u of USERS) await usrPush(u, null, true); }
     return usrBadge(); }
-  const map = new Map(); snap.docs.forEach(d => { const x = d.data(); if (x?.user) map.set(x.user, x); }); USR.ref = new Map([...map].map(([k, x]) => [k, JSON.stringify(x.modulos || [])]));
+  const map = new Map(); snap.docs.forEach(d => { const x = d.data(); if (x?.user) { if (!x.clave) { const l = USERS.find(z => z.user === x.user); if (l?.clave) x.clave = l.clave; } map.set(x.user, x); } }); USR.ref = new Map([...map].map(([k, x]) => [k, JSON.stringify(x.modulos || [])]));
   for (const l of USERS) if (l.pend && !map.has(l.user)) { map.set(l.user, l); usrPush(l, null, true); } /* creados sin conexión */
   usrReemplazar([...map.values()].map(usrPub)); usrBadge(); if (typeof entregRefrescar === 'function') { entregPurgar(); entregRefrescar(); } }
 /* Ingreso: si el usuario aún no llegó a este equipo (recién creado en otro ordenador) o cambió su clave, se consulta la base compartida al instante */
@@ -3709,7 +3733,7 @@ function route() {
   { const TOP = { home: [{ name: 'Panel principal', c: '--c-home', icon: 'layout-dashboard' }, { name: 'Inicio', icon: 'layout-dashboard' }], planes: [{ name: 'Suscripción', c: '--c-plan', icon: 'crown' }, { name: 'Planes SIGISAC', icon: 'crown' }] }, mm = TOP[id]?.[0] || SUB[id].m, ss = TOP[id]?.[1] || SUB[id].s;
     $('#crumbs').innerHTML = `<span class="tb-ico" style="--c:var(${mm.c})">${ic(ss.icon || mm.icon)}</span><span class="tb-txt"><span class="tb-eye">${h(mm.name)}</span><b class="tb-tit">${h(ss.name)}</b></span>`;
     document.title = `${ss.name} · SIGISAC ERP PROFESIONAL`; }
-  $('#perLbl').innerHTML = '<span class="pl-w">Ejercicio </span>' + ENG.year(S.cfg.corte); $('#entLbl').textContent = S.cfg.entidad.nombre || 'Registre su entidad'; $('#entCount').textContent = Object.keys(S.ents || {}).length === 1 && !S.cfg.entidad.nombre ? 0 : Object.keys(S.ents || {}).length;
+  $('#perLbl').innerHTML = '<span class="pl-w">Ejercicio </span>' + ENG.year(S.cfg.corte); $('#entLbl').textContent = S.cfg.entidad.nombre || (WSYNC.estado === 'cargando' ? 'Cargando entidades…' : 'Registre su entidad'); $('#entCount').textContent = Object.keys(S.ents || {}).length === 1 && !S.cfg.entidad.nombre ? 0 : Object.keys(S.ents || {}).length;
   $('#app').classList.remove('nav-open'); window.scrollTo({ top: 0 });
 }
 const go = id => { if (location.hash === '#' + id) route(); else location.hash = id; };
@@ -5088,7 +5112,7 @@ async function boot() {
     S = wsAdopt(saved && saved.ver === VER && saved.inv ? wsPrep(saved) : await initialState());
     entEnsure(); S.inv.forEach(b => b.sit = sitAuto(b.estado)); invalidate(); $('#boot').hidden = true;
     if (!USERS.length) USERS.push({ dni: '', correo: '', nombre: 'Administrador SIGISAC ERP PROFESIONAL', cargo: 'Administrador del sistema', user: 'admin', clave: await claveHash('sigisac2026'), def: true, modulos: ['Todos'] });
-    await usrMigrar(); usrInit().then(segInit);
+    await usrMigrar(); USR.initP = usrInit(); USR.initP.then(segInit);
     let sess = null; try { sess = sessionStorage.getItem('sigisac-sess'); } catch (e) { }
     const u = sess && USERS.find(x => x.user === sess && !x.bloq); if (u) await startSession(u); else $('#login').hidden = false;
     mutate(); loginHint();
@@ -5107,15 +5131,15 @@ async function wsAbrir(u) { const key = u.ws || 'state'; if (key === WS_KEY && S
   await wsFlush(); const st = await IDB.get(key), prev = S;
   S = wsAdopt(st && st.ver === VER && st.inv ? wsPrep(st) : key === 'state' ? await initialState() : await wsVacio(u)); WS_KEY = key;
   if (prev !== S) { entEnsure(); S.inv.forEach(b => b.sit = sitAuto(b.estado)); invalidate(); mutate(); } }
-function wsBienvenida() { if (S.cfg.entidad?.nombre || !S.nuevo || esInv(SESSION)) return;
-  $('#modal').innerHTML = `<div class="m-card aviso" role="dialog" aria-modal="true" aria-labelledby="wbT"><div class="av-ico">${ic('database')}</div><h3 id="wbT">Su base de datos está lista</h3><p>Bienvenido(a), <b>${h(SESSION.nombre || SESSION.user)}</b>. Su espacio de trabajo empieza <b>sin información</b>: registre su entidad (RUC, UE y datos generales) y luego cargue su data. Puede registrar varias entidades desde el selector de la parte superior.</p>
+function wsBienvenida(confirmado) { if (!confirmado || !SESSION || S.cfg.entidad?.nombre || wsCont(S) || esInv(SESSION)) return;
+  $('#modal').innerHTML = `<div class="m-card aviso" role="dialog" aria-modal="true" aria-labelledby="wbT"><div class="av-ico">${ic('database')}</div><h3 id="wbT">No tienes entidades registradas</h3><p>Bienvenido(a), <b>${h(SESSION.nombre || SESSION.user)}</b>. ${USR.db ? 'Se consultó la base central y su usuario aún no tiene información guardada' : 'Su espacio de trabajo en este equipo está vacío'}: registre su entidad (RUC, UE y datos generales) y luego cargue su data. ${USR.db ? 'Todo lo que registre quedará disponible en cualquier dispositivo donde ingrese con su usuario.' : ''}</p>
     <div class="av-btns"><button class="btn-glow" data-a="wsEnt">${ic('landmark')}Registrar mi entidad</button></div></div>`; $('#modal').hidden = false; }
 GLOBAL_ACT_EXTRA.wsEnt = () => { closeModal(); go('entidad'); };
 GLOBAL_ACT_EXTRA.planVer = () => { closeModal(); go('planes'); };
 GLOBAL_ACT_EXTRA.planSolicitar = async b => { closeModal(); await planSolicitar(b.dataset.p); };
 async function startSession(u) { await wsAbrir(u); SESSION = u; document.body.classList.toggle('rol-inv', esInv(u)); try { sessionStorage.setItem('sigisac-sess', u.user); } catch (e) { } $('#login').hidden = true; $('#avatar').textContent = (u.nombre || u.user).split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase(); $('#avatar').title = (u.nombre || u.user) + ' · Cerrar sesión';
   const id = (location.hash || '').slice(1); if (id && !allowed(id)) history.replaceState(null, '', location.pathname + location.search);
-  route(); segPresencia(); segBell(); wsBienvenida(); ntIngreso(u); ENTREG.firma = ''; entregPublicar(); wsWatch(); }
+  route(); segPresencia(); segBell(); if (USR.initDone && !USR.db) wsBienvenida(true); ntIngreso(u); ENTREG.firma = ''; entregPublicar(); wsWatch(); }
 
 
 /* ---------- Base de trabajo en la nube: la misma información en todos los ordenadores del usuario ----------
@@ -5124,48 +5148,98 @@ async function startSession(u) { await wsAbrir(u); SESSION = u; document.body.cl
    reciben al instante los avances hechos en cualquier otro ordenador. Los usuarios de inventario solo reciben (su trabajo
    viaja por Campo compartido), para no pisar la base de su usuario principal.                                              */
 const wsHash = async str => { const b = await crypto.subtle.digest('SHA-1', new TextEncoder().encode(str)); return [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, '0')).join(''); };
-const WSYNC = { hash: '', key: '', unsub: null, timer: null, ver: '', t: '', listo: false, aplicando: false, dirty: false, subiendo: false };
-const wsMan = k => usrId(String(k)).slice(0, 60), wsCol = k => ('wsd_' + String(k).replace(/[^A-Za-z0-9_-]/g, '')).slice(0, 40), WS_PARTE = 100000;
+const WSYNC = { hash: '', key: '', unsub: null, timer: null, ver: '', t: '', listo: false, aplicando: false, dirty: false, subiendo: false, estado: '', err: '', pend: '' };
+const wsMan = k => usrId(String(k)).slice(0, 60), wsCol = k => ('wsd_' + String(k).replace(/[^A-Za-z0-9_-]/g, '')).slice(0, 40);
 async function wsGz(str) { const b = await new Response(new Blob([str]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer(), u = new Uint8Array(b); let bin = ''; for (let i = 0; i < u.length; i += 32768) bin += String.fromCharCode.apply(null, u.subarray(i, i + 32768)); return btoa(bin); }
 function wsJson() { const { fam, cls, items, migHdr, ...rest } = S, o = { ...rest, cfg: { ...S.cfg } }; delete o.cfg.usuarios; if (S.catCustom) Object.assign(o, { fam, cls, items }); return JSON.stringify(o); }
-function wsStop() { try { WSYNC.unsub?.(); } catch (e) { } clearTimeout(WSYNC.timer); Object.assign(WSYNC, { key: '', unsub: null, listo: false, dirty: false }); }
-function wsSchedule(ms = 5000) { if (!USR.db || !SESSION || WSYNC.aplicando || esInv(SESSION)) return; WSYNC.dirty = true; if (!WSYNC.listo) return; clearTimeout(WSYNC.timer); WSYNC.timer = setTimeout(wsPush, ms); }
-async function wsPush() { if (!USR.db || !SESSION || esInv(SESSION) || WSYNC.aplicando) return; if (WSYNC.subiendo) return wsSchedule(3000);
-  const key = WS_KEY; WSYNC.subiendo = true;
-  try { const js = wsJson(), hs = await wsHash(js); if (hs === WSYNC.hash) { WSYNC.dirty = false; return; } /* sin cambios reales en la base de trabajo */
-    const data = await wsGz(js), n = Math.ceil(data.length / WS_PARTE), ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 5), t = new Date().toISOString(), col = USR.db.collection(wsCol(key)), nb = wsCont(S), nom = wsNom(S);
-    for (let i = 0; i < n; i++) await col.doc(ver + '_' + i).set({ ver, i, n, nb, t, nom, d: data.slice(i * WS_PARTE, (i + 1) * WS_PARTE) });
-    WSYNC.pend = ver; await USR.db.collection('wsman').doc(wsMan(key)).set({ ws: key, ver, n, t, nb, nom, dev: SEG.dev?.id || '', user: SESSION.user, nombre: SESSION.nombre || '', size: data.length });
-    Object.assign(WSYNC, { ver, t, dirty: false, hash: hs }); IDB.set('wsync:' + key, { ver, t, hash: hs });
-    wsPodar(col, ver).catch(() => { }); /* las versiones anteriores se conservan como historial recuperable */
-    const el = $('#saveState'); if (el) { el.textContent = 'Guardado y sincronizado en la nube'; el.className = 'save ok'; }
-  } catch (e) { console.warn('wsPush', e); const el = $('#saveState'); if (el) { el.textContent = 'Guardado en este navegador (sin sincronizar)'; el.className = 'save warn'; } setTimeout(() => wsSchedule(), 20000); }
-  finally { WSYNC.subiendo = false; } }
-async function wsPull(key, m) { const col = USR.db.collection(wsCol(key)); const q = await col.where('ver', '==', m.ver).get(); const P = q.docs.map(d => d.data()).sort((a, b) => a.i - b.i);
-  if (P.length !== m.n) return false; const st = JSON.parse(await LIB.gunzipB64(P.map(x => x.d).join('')));
-  if (key !== WS_KEY || !st || !st.inv) return false;
-  const locN = wsCont(S), remN = wsCont(st);
-  if (locN > 0 && !esInv(SESSION) && (remN === 0 || (!WSYNC.t && locN > remN))) { /* nunca se reemplaza una base con información por una vacía o más pequeña: se conserva la de este ordenador y se sube */
-    Object.assign(WSYNC, { ver: m.ver, t: m.t, hash: '', dirty: true, listo: true }); wsSchedule(800); return 'kept'; }
-  if (locN > 0) await wsBak(key, S, 'Antes de actualizar desde la nube');
-  const sucio = !!WSYNC.hash && (await wsHash(wsJson())) !== WSYNC.hash;
-  if (sucio) { /* cambios locales aún no subidos: se conservan los registros de Campo más recientes de este ordenador */
-    const mp = new Map((st.inv || []).map((b, i) => [String(b.cod), i])); for (const b of S.inv || []) { const i = mp.get(String(b.cod)); if (i == null) st.inv.push(b); else if (String(b.verifT || '') > String(st.inv[i].verifT || '')) st.inv[i] = b; } }
-  WSYNC.aplicando = true;
-  try { st.ver = VER; S = wsAdopt(wsPrep(st)); entEnsure(); S.inv.forEach(b => b.sit = b.sit || sitAuto(b.estado)); invalidate(); await IDB.set(WS_KEY, S); const hs = sucio ? '' : await wsHash(wsJson()); Object.assign(WSYNC, { ver: m.ver, t: m.t, hash: hs, dirty: sucio }); IDB.set('wsync:' + key, { ver: m.ver, t: m.t, hash: hs });
-    if (typeof campoSync === 'function') { CAMPO.key = ''; campoSync(); } if ($('#wbT') && wsCont(S)) closeModal(); refresh(); entregPublicar?.();
-  } finally { WSYNC.aplicando = false; }
-  if (sucio) wsSchedule(1500); return true; }
-async function wsWatch() { wsDiario(); if (!USR.db || !SESSION) return; const key = WS_KEY; if (WSYNC.key === key && WSYNC.unsub) return; wsStop(); WSYNC.key = key;
-  setTimeout(() => { if (WS_KEY === key && SESSION && !esInv(SESSION) && !wsCont(S)) wsAutoRecup(key); }, 7000);
-  const loc = (await IDB.get('wsync:' + key)) || {}; WSYNC.ver = loc.ver || ''; WSYNC.t = loc.t || ''; WSYNC.hash = loc.hash || '';
-  try { WSYNC.unsub = USR.db.collection('wsman').doc(wsMan(key)).onSnapshot(async s => { if (key !== WS_KEY || !SESSION) return;
-      if (!s.exists) { if (!WSYNC.listo) { WSYNC.listo = true; if (!esInv(SESSION)) { WSYNC.dirty = true; wsSchedule(1200); } } return; }
-      const m = s.data(); if (m.ver === WSYNC.pend && m.ver !== WSYNC.ver) return; if (m.ver === WSYNC.ver) { if (!WSYNC.listo) { WSYNC.listo = true; if (WSYNC.dirty) wsSchedule(); } return; }
-      if (WSYNC.t && String(m.t) <= String(WSYNC.t)) { WSYNC.listo = true; if (WSYNC.dirty) wsSchedule(1200); return; }
-      try { const ok = await wsPull(key, m); WSYNC.listo = true; if (ok === 'kept') return; if (ok) toast(m.dev && m.dev !== SEG.dev?.id ? `Avances actualizados desde otro ordenador (${m.nombre || m.user || ''}, ${segHace(m.t)})` : 'Base de trabajo actualizada desde la nube', 'ok', 5000); }
-      catch (e) { console.warn('wsPull', e); WSYNC.listo = true; } }, () => { }); } catch (e) { console.warn('wsWatch', e); } }
+const wsCentral = () => !!USR.db && !!SESSION && (!USR.db.netlify || !USR.db.auth || !!NET.tok);
 
+/* ---- Transporte de la base de trabajo ----
+   Netlify: /api/ws (servidor con sesión firmada, permisos por usuario, partes de 1,2 MB, manifiesto con control de
+   concurrencia y hora del servidor). Claude: colecciones wsman / wsd_<ws> de la base del artifact (privada del dueño). */
+const WT_NET = {
+  async man(key) { const j = await netApi('GET', { op: 'man', ws: key }); return j.man || null; },
+  async bajar(key, m) { const P = []; for (let i = 0; i < m.n; i++) P.push(await netApi('GET', { op: 'part', ws: key, ver: m.ver, i }, null, true)); return P.join(''); },
+  async subir(key, data, meta, base) { const PAR = 1000000, n = Math.ceil(data.length / PAR), ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    for (let i = 0; i < n; i++) await netApi('POST', null, { op: 'put', ws: key, ver, i, d: data.slice(i * PAR, (i + 1) * PAR) });
+    try { const j = await netApi('POST', null, { op: 'commit', ws: key, ver, n, base: base || '', ...meta }); return { ok: true, man: j.man }; }
+    catch (e) { if (e.status === 409) return { conflict: true, man: e.body?.man || null }; throw e; } },
+  async hist(key) { const j = await netApi('GET', { op: 'hist', ws: key }); return (j.hist || []).map(v => ({ ...v, completa: true, tm: new Date(v.t).getTime() })); },
+  watch(key, cb, err) { let vivo = true, ult = ''; const tick = async () => { if (!vivo || document.hidden) return; try { const m = await WT_NET.man(key); const sig = m ? m.ver : '-'; if (sig !== ult || !WSYNC.listo) { ult = sig; await cb(m); } } catch (e) { err(e); } };
+    tick(); const id = setInterval(tick, 4000), vis = () => { if (!document.hidden) tick(); }; document.addEventListener('visibilitychange', vis);
+    return () => { vivo = false; clearInterval(id); document.removeEventListener('visibilitychange', vis); }; } };
+const WT_CL = {
+  async man(key) { const d = await USR.db.collection('wsman').doc(wsMan(key)).get(); return d.exists ? d.data() : null; },
+  async bajar(key, m) { const q = await USR.db.collection(wsCol(key)).where('ver', '==', m.ver).get(); const P = q.docs.map(d => d.data()).sort((a, b) => a.i - b.i); if (P.length !== m.n) throw new Error('La versión está incompleta'); return P.map(x => x.d).join(''); },
+  async subir(key, data, meta, base) { const PAR = 100000, n = Math.ceil(data.length / PAR), ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 5), t = new Date().toISOString(), col = USR.db.collection(wsCol(key));
+    const cur = await WT_CL.man(key); if (cur && base !== undefined && (cur.ver || '') !== (base || '')) return { conflict: true, man: cur };
+    for (let i = 0; i < n; i++) await col.doc(ver + '_' + i).set({ ver, i, n, nb: meta.nb, t, nom: meta.nom, d: data.slice(i * PAR, (i + 1) * PAR) });
+    const man = { ws: key, ver, n, t, ...meta, user: SESSION.user, nombre: SESSION.nombre || '' }; WSYNC.pend = ver; await USR.db.collection('wsman').doc(wsMan(key)).set(man);
+    wsPodar(col, ver).catch(() => { }); return { ok: true, man }; },
+  async hist(key) { return wsVersionesC(key); },
+  watch(key, cb, err) { return USR.db.collection('wsman').doc(wsMan(key)).onSnapshot(s => cb(s.exists ? s.data() : null), err); } };
+const WT = () => USR.db?.netlify ? WT_NET : WT_CL;
+
+/* ---- Estado visible de la base central ---- */
+function wsEstado(e, msg = '') { WSYNC.estado = e; WSYNC.err = msg; const bar = $('#wsBar'); if (!bar) return;
+  const T = { cargando: ['info', 'Cargando su información desde la base central…', ''], error: ['bad', msg || 'No se pudo conectar con la base central.', `<button class="mini" data-a="wsReintentar">${ic('rotate-ccw')}Reintentar</button>`],
+    auth: ['warn', msg || 'Su sesión con la base central venció.', `<button class="mini" data-a="wsReingresar">${ic('log-in')}Ingresar nuevamente</button>`] }[e];
+  bar.hidden = !T || !SESSION; if (T) { bar.className = 'ws-bar ' + T[0]; bar.innerHTML = `${e === 'cargando' ? '<i class="ws-spin"></i>' : ic(e === 'auth' ? 'key-round' : 'triangle-alert')}<span>${h(T[1])}</span>${T[2]}`; }
+  const ch = $('#entLbl'); if (ch && e === 'cargando' && !S.cfg.entidad?.nombre) ch.textContent = 'Cargando entidades…';
+  const dm = $('.side-foot .dim'); if (dm) dm.textContent = SESSION && USR.db && e !== 'auth' && e !== 'local' ? 'Sus datos se guardan en la base central y se sincronizan en todos sus dispositivos.' : 'Los datos viven en este navegador. Exporte respaldos en Configuración › Data.'; }
+function wsGuardado(txt, cls) { const el = $('#saveState'); if (el) { el.textContent = txt; el.className = 'save ' + cls; } }
+GLOBAL_ACT_EXTRA.wsReintentar = () => { wsStop(); wsWatch(); };
+GLOBAL_ACT_EXTRA.wsReingresar = () => logout();
+function wsErr(e) { if (e?.status === 401) { NET.tok = ''; netGuardarTok(); wsEstado('auth', e.message); return; } if (e?.status === 403) return wsEstado('error', e.message || 'Sin permiso para esta base de trabajo.'); wsEstado('error', 'No se pudo conectar con la base central' + (e?.message ? ': ' + e.message : '') + '. Sus cambios quedan guardados en este equipo y se enviarán al reconectar.'); }
+
+function wsStop() { try { WSYNC.unsub?.(); } catch (e) { } clearTimeout(WSYNC.timer); Object.assign(WSYNC, { key: '', unsub: null, listo: false, dirty: false }); }
+function wsSchedule(ms = 2500) { if (!wsCentral() || WSYNC.aplicando || esInv(SESSION)) return; WSYNC.dirty = true; if (!WSYNC.listo) return; clearTimeout(WSYNC.timer); WSYNC.timer = setTimeout(wsPush, ms); }
+/* Guarda en la base central. «Guardado correctamente» solo se muestra con la confirmación del servidor. */
+async function wsPush(intento = 0) { if (!wsCentral() || esInv(SESSION) || WSYNC.aplicando || !WSYNC.listo) return false; if (WSYNC.subiendo) { wsSchedule(1500); return false; }
+  const key = WS_KEY; if (S.dueno && S.dueno !== SESSION.user && key !== 'state') { wsEstado('error', 'Esta base pertenece a otro usuario: no se envía a la base central.'); return false; }
+  WSYNC.subiendo = true;
+  try { const js = wsJson(), hs = await wsHash(js); if (hs === WSYNC.hash) { WSYNC.dirty = false; wsGuardado('Guardado correctamente', 'ok'); return true; }
+    wsGuardado('Guardando en la base central…', 'warn');
+    const data = await wsGz(js), r = await WT().subir(key, data, { nb: wsCont(S), nom: wsNom(S), size: data.length, dev: SEG.dev?.id || '' }, WSYNC.ver);
+    if (key !== WS_KEY) return false;
+    if (r.conflict) { /* otro dispositivo guardó antes: se incorpora su versión (sin perder lo de este equipo) y se vuelve a guardar */
+      WSYNC.subiendo = false; if (r.man && intento < 3) { await wsPull(key, r.man, true); return wsPush(intento + 1); } throw new Error('conflicto de versiones'); }
+    Object.assign(WSYNC, { ver: r.man.ver, t: r.man.t, dirty: false, hash: hs }); IDB.set('wsync:' + key, { ver: r.man.ver, t: r.man.t, hash: hs });
+    if (WSYNC.estado !== 'ok') wsEstado('ok'); wsGuardado('Guardado correctamente', 'ok'); return true;
+  } catch (e) { console.warn('wsPush', e); wsGuardado('No se pudo guardar en la base central', 'warn'); wsErr(e); clearTimeout(WSYNC.timer); WSYNC.timer = setTimeout(() => wsSchedule(0), 15000); return false; }
+  finally { WSYNC.subiendo = false; } }
+async function wsPull(key, m, forzar) { const st = JSON.parse(await LIB.gunzipB64(await WT().bajar(key, m)));
+  if (key !== WS_KEY || !st || !st.inv) return false;
+  const locN = wsCont(S), remN = wsCont(st), propia = !S.dueno || S.dueno === SESSION.user || key === 'state';
+  if (!forzar && propia && locN > 0 && !esInv(SESSION) && (remN === 0 || (!WSYNC.t && locN > remN))) { /* migración segura: nunca se reemplaza una base con información por una vacía o más pequeña */
+    Object.assign(WSYNC, { ver: m.ver, t: m.t, hash: '', dirty: true, listo: true }); wsSchedule(300); return 'kept'; }
+  if (locN > 0) await wsBak(key, S, 'Antes de actualizar desde la base central');
+  const sucio = !!WSYNC.hash && (await wsHash(wsJson())) !== WSYNC.hash;
+  if (sucio || forzar) { /* cambios locales aún no guardados: se conservan los registros de Campo más recientes de este equipo */
+    const mp = new Map((st.inv || []).map((b, i) => [String(b.cod), i])); for (const b of S.inv || []) { const i = mp.get(String(b.cod)); if (i == null) { if (b.verifT) st.inv.push(b); } else if (String(b.verifT || '') > String(st.inv[i].verifT || '')) st.inv[i] = b; } }
+  WSYNC.aplicando = true; let hs = '';
+  try { st.ver = VER; S = wsAdopt(wsPrep(st)); entEnsure(); S.inv.forEach(b => b.sit = b.sit || sitAuto(b.estado)); invalidate(); const jsA = sucio || forzar ? '' : wsJson(); /* huella del estado recibido, antes de cualquier espera: lo que el usuario cambie mientras tanto se guardará */
+    await IDB.set(WS_KEY, S); hs = jsA ? await wsHash(jsA) : ''; Object.assign(WSYNC, { ver: m.ver, t: m.t, hash: hs, dirty: sucio || forzar }); IDB.set('wsync:' + key, { ver: m.ver, t: m.t, hash: hs });
+    if (typeof campoSync === 'function') { CAMPO.key = ''; campoSync(); } if ($('#wbT') && wsCont(S)) closeModal(); route(); if (typeof entregPublicar === 'function') entregPublicar();
+  } finally { WSYNC.aplicando = false; }
+  if (sucio && !forzar) wsSchedule(800); else if (hs && (await wsHash(wsJson())) !== hs) wsSchedule(300); return true; }
+/* Al ingresar: consulta la base central, muestra «cargando» y solo dice «sin entidades» si la consulta confirma que no hay */
+async function wsWatch() { wsDiario(); if (!SESSION) return; if (!USR.db) { if (USR.initDone) wsEstado('local'); return; }
+  if (USR.db.netlify && USR.db.auth && !NET.tok) return wsEstado('auth', NET.err || 'Para ver su información en cualquier dispositivo, ingrese nuevamente con su usuario y clave.');
+  const key = WS_KEY; if (WSYNC.key === key && WSYNC.unsub) return; wsStop(); WSYNC.key = key;
+  const loc = (await IDB.get('wsync:' + key)) || {}; WSYNC.ver = loc.ver || ''; WSYNC.t = loc.t || ''; WSYNC.hash = loc.hash || '';
+  wsEstado('cargando'); let primera = true;
+  const alListo = () => { if (!primera) return; primera = false; if (WSYNC.estado !== 'ok') wsEstado('ok'); wsGuardado(WSYNC.dirty ? 'Guardando en la base central…' : 'Guardado correctamente', WSYNC.dirty ? 'warn' : 'ok');
+    if (!wsCont(S) && !esInv(SESSION)) { wsBienvenida(true); setTimeout(() => { if (WS_KEY === key && SESSION && !wsCont(S)) wsAutoRecup(key); }, 1500); } route(); };
+  try { WSYNC.unsub = WT().watch(key, async m => { if (key !== WS_KEY || !SESSION) return;
+      try {
+        if (!m) { WSYNC.listo = true; if (!esInv(SESSION) && wsCont(S)) { WSYNC.dirty = true; await wsPush(); } return alListo(); }
+        if (m.ver === WSYNC.pend && m.ver !== WSYNC.ver) return;
+        if (m.ver === WSYNC.ver) { WSYNC.listo = true; if (WSYNC.dirty) wsSchedule(300); return alListo(); }
+        const ok = await wsPull(key, m); WSYNC.listo = true; alListo();
+        if (ok === true && !primera) toast(m.dev && m.dev !== SEG.dev?.id ? `Cambios recibidos de otro dispositivo (${m.nombre || m.user || ''}, ${segHace(m.t)})` : 'Base de trabajo actualizada', 'ok', 4000);
+      } catch (e) { console.warn('wsWatch', e); wsErr(e); } }, e => { console.warn('wsWatch', e); wsErr(e); }); }
+  catch (e) { console.warn('wsWatch', e); wsErr(e); } }
 
 /* ---------- Protección de la base de trabajo: copias, historial y recuperación ----------
    La información registrada nunca se pierde por una actualización ni por ingresar desde otro ordenador:
@@ -5183,16 +5257,17 @@ async function wsBak(key, st, origen) { try { const nb = wsCont(st); if (!nb) re
   L.unshift({ t: new Date().toISOString(), origen, nb, nom, st: c }); await IDB.set('bak:' + key, L.slice(0, 8)); } catch (e) { console.warn('wsBak', e); } }
 async function wsDiario() { try { if (!SESSION || !wsCont(S)) return; const L = (await IDB.get('bak:' + WS_KEY)) || []; if (L.some(b => String(b.t).slice(0, 10) === todayISO())) return; await wsBak(WS_KEY, S, 'Copia diaria al ingresar'); } catch (e) { } }
 const wsVerT = v => parseInt(String(v).slice(0, -3), 36) || 0;
-async function wsVersiones(key) { const q = await USR.db.collection(wsCol(key)).get(), V = new Map();
+async function wsVersiones(key) { return WT().hist(key); }
+async function wsVersionesC(key) { const q = await USR.db.collection(wsCol(key)).get(), V = new Map();
   q.docs.forEach(d => { const x = d.data(); if (!x?.ver) return; const v = V.get(x.ver) || { ver: x.ver, ids: [], is: new Set(), size: 0, n: x.n, nb: x.nb, nom: x.nom || '', t: x.t || '' }; v.ids.push(d.id); v.is.add(x.i); v.size += (x.d || '').length; if (x.nb != null) v.nb = x.nb; if (x.n) v.n = x.n; if (x.nom) v.nom = x.nom; V.set(x.ver, v); });
   return [...V.values()].map(v => { const n = v.n || (Math.max(...v.is) + 1); return { ...v, completa: [...Array(n).keys()].every(i => v.is.has(i)), tm: wsVerT(v.ver) }; }).sort((a, b) => b.tm - a.tm); }
-async function wsPodar(col, actual) { const L = await wsVersiones(WS_KEY), keep = new Set([actual]), dias = new Set(); let tot = 0;
+async function wsPodar(col, actual) { const L = await wsVersionesC(WS_KEY), keep = new Set([actual]), dias = new Set(); let tot = 0;
   const rica = L.filter(v => v.nb != null && v.completa).sort((a, b) => b.nb - a.nb)[0]; if (rica) keep.add(rica.ver);
   L.forEach((v, i) => { const dia = new Date(v.tm).toISOString().slice(0, 10); if (i < 3 || v.nb == null || (!dias.has(dia) && dias.size < 7)) { if (tot + v.size < 9e6 || i < 2 || v.nb == null) { keep.add(v.ver); dias.add(dia); } } });
   L.forEach(v => { if (keep.has(v.ver)) tot += v.size; });
   for (const v of L) if (!keep.has(v.ver) || (!v.completa && v.ver !== actual && Date.now() - v.tm > 3600000)) for (const id of v.ids) await col.doc(id).delete().catch(() => { }); }
-async function wsBajar(key, v) { const col = USR.db.collection(wsCol(key)); const q = await col.where('ver', '==', v.ver).get(); const P = q.docs.map(d => d.data()).sort((a, b) => a.i - b.i);
-  const st = JSON.parse(await LIB.gunzipB64(P.map(x => x.d).join(''))); if (!st || !st.inv) throw new Error('La versión no se pudo leer'); return st; }
+async function wsBajar(key, v) { const n = v.n || (v.is ? Math.max(...v.is) + 1 : 1);
+  const st = JSON.parse(await LIB.gunzipB64(await WT().bajar(key, { ...v, n }))); if (!st || !st.inv) throw new Error('La versión no se pudo leer'); return st; }
 async function wsRestaurar(st, origen) { if (!st || !st.inv) return toast('Copia no válida', 'bad'); await wsBak(WS_KEY, S, 'Antes de restaurar'); st = JSON.parse(JSON.stringify(st)); st.ver = VER; delete st.nuevo;
   WSYNC.aplicando = true; try { S = wsAdopt(wsPrep(st)); entEnsure(); S.inv.forEach(b => b.sit = b.sit || sitAuto(b.estado)); invalidate(); await IDB.set(WS_KEY, S); } finally { WSYNC.aplicando = false; }
   WSYNC.hash = ''; mutate('Base de trabajo restaurada: ' + origen); wsSchedule(600); closeModal(); route(); if (typeof renderEntMenu === 'function' && !$('#entMenu')?.hidden) renderEntMenu(); if (typeof entregPublicar === 'function') entregPublicar(); toast('Base de trabajo restaurada: ' + (wsNom(S) || origen), 'ok', 6000); }
@@ -5230,12 +5305,12 @@ GLOBAL_ACT_EXTRA.invGuardar = async b => { if (b) b.disabled = true; const t = n
   try { clearTimeout(saveTimer); const loc = await IDB.set(WS_KEY, S); await IDB.set('usuarios', USERS);
     const nb = wsCont(S); if (nb) { const L = (await IDB.get('bak:' + WS_KEY)) || []; const { fam, cls, items, ...r } = S; L.unshift({ t, origen: 'Guardar inventario (Campo)', nb, nom: wsNom(S), st: S.catCustom ? S : r }); await IDB.set('bak:' + WS_KEY, L.slice(0, 8)); }
     let nube = false, msgN = '';
-    if (USR.db && SESSION && !esInv(SESSION)) { const antes = WSYNC.ver; WSYNC.hash = ''; for (let i = 0; i < 20 && WSYNC.subiendo; i++) await new Promise(r => setTimeout(r, 300)); clearTimeout(WSYNC.timer); await wsPush(); nube = WSYNC.ver !== antes && !WSYNC.dirty; msgN = nube ? 'En la nube del sitio (disponible en cualquier ordenador)' : 'Nube: no se pudo subir ahora; se reintentará sola'; }
+    if (wsCentral() && !esInv(SESSION)) { WSYNC.hash = ''; for (let i = 0; i < 40 && WSYNC.subiendo; i++) await new Promise(r => setTimeout(r, 300)); clearTimeout(WSYNC.timer); nube = await wsPush(); msgN = nube ? 'Guardado correctamente en la base central (confirmado por el servidor)' : 'Base central: no se pudo guardar ahora (' + (WSYNC.err || 'sin conexión') + '); se reintentará sola'; }
     else if (USR.db && esInv(SESSION)) { nube = true; msgN = 'Sus verificaciones de Campo ya están publicadas para su usuario principal'; }
     else msgN = 'Este sitio no tiene base compartida: descargue también un respaldo .json';
     await IDB.set('invsave:' + WS_KEY, { t, nube }); log('Inventario guardado manualmente desde Campo'); invSvEstado();
     const ver = (S.inv || []).filter(x => x.verifT || x.codInv).length;
-    $('#modal').innerHTML = `<div class="m-card aviso ok" role="dialog" aria-modal="true" aria-labelledby="isT"><div class="av-ico">${ic('circle-check')}</div><h3 id="isT">Inventario guardado</h3><p><b>${h(S.cfg.entidad?.nombre || 'Entidad')}</b> · ${fmtI(ver)} bienes verificados · ${fmtI((S.inv || []).length)} en inventario.</p>
+    $('#modal').innerHTML = `<div class="m-card aviso ${nube || !USR.db ? 'ok' : 'warn'}" role="dialog" aria-modal="true" aria-labelledby="isT"><div class="av-ico">${ic(nube || !USR.db ? 'circle-check' : 'triangle-alert')}</div><h3 id="isT">${nube ? 'Guardado correctamente' : USR.db ? 'Guardado solo en este equipo' : 'Inventario guardado'}</h3><p><b>${h(S.cfg.entidad?.nombre || 'Entidad')}</b> · ${fmtI(ver)} bienes verificados · ${fmtI((S.inv || []).length)} en inventario.</p>
       <ul style="text-align:left;font-size:12.5px;margin:4px 0 10px;padding-left:18px;line-height:1.6"><li>${loc ? 'Guardado en este navegador' : 'Este navegador no permite guardar: descargue un respaldo'}</li><li>Copia de seguridad recuperable (Configuración › Data › Recuperar base de trabajo)</li><li>${h(msgN)}</li></ul>
       <div class="av-btns"><button class="btn-glow" data-close>${ic('check')}Aceptar</button><button class="mini" data-a="invRespaldo">${ic('hard-drive-download')}Descargar respaldo .json</button></div></div>`; $('#modal').hidden = false;
   } catch (e) { console.error(e); toast('No se pudo guardar: ' + e.message, 'bad'); } finally { if (b) b.disabled = false; } };
@@ -5266,9 +5341,14 @@ document.addEventListener('drop', e => { const d = e.target.closest('[data-drop]
 document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#modal').hidden) closeModal(); });
 $('#loginForm').addEventListener('submit', async e => { e.preventDefault(); const u = val('lg-user'), p = $('#lg-pass').value, btn = $('#loginForm [type=submit]'); if (!u || !p) { $('#lg-err').textContent = 'Ingrese usuario y contraseña.'; return; }
   if (btn) btn.disabled = true; $('#lg-err').textContent = '';
-  try { const buscar = () => USERS.filter(x => x.user === u || (x.dni && x.dni === u) || (x.correo && x.correo.toLowerCase() === u.toLowerCase())); let cands = buscar(), usr = null;
+  try { const msg = t => { $('#lg-err').innerHTML = `<span style="color:#1f2a44;font-weight:600">${t}</span>`; };
+    if (!USR.initDone && USR.initP && /^https?:$/.test(location.protocol)) { msg('Conectando con la base central…'); await Promise.race([USR.initP, new Promise(r => setTimeout(r, 7000))]); $('#lg-err').textContent = ''; }
+    NET.err = ''; if (USR.db?.netlify && USR.db.auth) { msg('Verificando en la base central…'); const nr = await netLogin(u, p); $('#lg-err').textContent = '';
+      if (nr.ok) { const { inv, admin, ...pf } = nr.perfil; const i = USERS.findIndex(x => x.user === pf.user), nu = { ...(i >= 0 ? USERS[i] : {}), ...pf, pend: undefined }; if (i >= 0) USERS[i] = nu; else USERS.push(nu); mutate(); }
+      else NET.err = nr.status === 401 ? 'Su usuario o clave no coinciden con la base central (o su usuario no está registrado allí). Lo que registre se guardará solo en este equipo.' : 'No se pudo conectar con la base central (' + (nr.error || 'sin conexión') + '). Lo que registre se guardará en este equipo.'; }
+    const buscar = () => USERS.filter(x => x.user === u || (x.dni && x.dni === u) || (x.correo && x.correo.toLowerCase() === u.toLowerCase())); let cands = buscar(), usr = null;
     for (const c of cands) if (await claveOk(p, c)) { usr = c; break; }
-    if (!usr && USR.db) { $('#lg-err').innerHTML = '<span style="color:#1f2a44;font-weight:600">Verificando usuario en la base compartida…</span>'; await usrBuscarRemoto(u); cands = buscar(); for (const c of cands) if (await claveOk(p, c)) { usr = c; break; } $('#lg-err').textContent = ''; }
+    if (!usr && USR.db && !(USR.db.netlify && USR.db.auth)) { $('#lg-err').innerHTML = '<span style="color:#1f2a44;font-weight:600">Verificando usuario en la base compartida…</span>'; await usrBuscarRemoto(u); cands = buscar(); for (const c of cands) if (await claveOk(p, c)) { usr = c; break; } $('#lg-err').textContent = ''; }
     if (!cands.length && !SRV.ok) { const dv = await segDev(), mi = new Date().toISOString().slice(0, 16).replace(/\D/g, ''); segAlerta('usuario_desconocido', u.slice(0, 60), `Alguien intentó ingresar con el usuario «${u.slice(0, 60)}», que no está registrado en SIGISAC (${dv.desc}).`, {}, 'UD-' + usrId(u.slice(0, 40)) + '-' + dv.id + '-' + mi); }
     if (!usr && !SRV.ok) segFallo(u);
     if (SRV.ok) { const j = await srvLogin(usr?.user || cands[0]?.user || u, p, !usr); /* el servidor reconoce usuarios creados en otros equipos */
@@ -5286,7 +5366,7 @@ function bienvenida(u) { document.querySelector('.bv-toast')?.remove(); const d 
   document.body.appendChild(d); const fuera = () => { d.classList.add('out'); setTimeout(() => d.remove(), 320); }; d.querySelector('.bv-x').onclick = fuera; setTimeout(fuera, 5000); }
 /* Menú de usuario (avatar): cerrar sesión, cambiar usuario y cambiar clave */
 function loginHint() { const el = $('.login-hint'); if (el) el.hidden = true; } /* la clave inicial no se muestra en la portada */
-function logout(cambiar) { wsStop(); loginHint(); $('#usrMenu').hidden = true; $('#bellMenu').hidden = true; SESSION = null; segPresencia(); segBell(); try { sessionStorage.removeItem('sigisac-sess'); sessionStorage.removeItem('sigisac.tok'); } catch (e) { } if (typeof SRV !== 'undefined') SRV.token = ''; $('#login').hidden = false; $('#lg-pass').value = ''; $('#lg-err').textContent = ''; if (cambiar) { $('#lg-user').value = ''; setTimeout(() => $('#lg-user').focus(), 50); } else setTimeout(() => $('#lg-pass').focus(), 50); }
+function logout(cambiar) { wsStop(); NET.tok = ''; netGuardarTok(); wsEstado('');  loginHint(); $('#usrMenu').hidden = true; $('#bellMenu').hidden = true; SESSION = null; segPresencia(); segBell(); try { sessionStorage.removeItem('sigisac-sess'); sessionStorage.removeItem('sigisac.tok'); } catch (e) { } if (typeof SRV !== 'undefined') SRV.token = ''; $('#login').hidden = false; $('#lg-pass').value = ''; $('#lg-err').textContent = ''; if (cambiar) { $('#lg-user').value = ''; setTimeout(() => $('#lg-user').focus(), 50); } else setTimeout(() => $('#lg-pass').focus(), 50); }
 function usrMenu() { const u = SESSION || {}, m = $('#usrMenu');
   m.innerHTML = `<div class="um-h"><span class="um-av">${h($('#avatar').textContent)}</span><div><b>${h(u.nombre || u.user || '')}</b><span>${h(u.user || '')}${u.cargo ? ' · ' + h(u.cargo) : ''}</span></div></div>
     <button class="um-i" data-um="clave">${ic('key-round')}<span><b>Cambiar clave</b><small>Actualice la contraseña de su usuario</small></span></button>

@@ -1,0 +1,12 @@
+const {chromium}=require('playwright');(async()=>{const b=await chromium.launch();const errs=[];const B='http://localhost:8810';
+const page=async(n)=>{const p=await (await b.newContext()).newPage();p.on('pageerror',e=>errs.push(n+':'+e.message));await p.goto(B+'/');await p.waitForTimeout(3000);return p;};
+const login=async(p,u,pw,w=5000)=>{await p.fill('#lg-user',u);await p.fill('#lg-pass',pw);await p.click('#loginForm [type=submit]');await p.waitForTimeout(w);};
+const V=await page('V');await login(V,'victoria','v1');
+console.log('crea inventariador:',await V.evaluate(async()=>{const x={user:'inv1',nombre:'INVENTARIADOR UNO',clave:await claveHash('i1'),tipo:'inventario',padre:'victoria',ws:WS_KEY,modulos:['Inventario físico/campo']};USERS.push(x);mutate();const r=await usrPush(x);return String(r);}));
+const I=await page('I');await login(I,'inv1','i1',7000);
+console.log('inventariador ve:',await I.evaluate(()=>JSON.stringify({ws:WS_KEY,ent:S.cfg.entidad.nombre,ents:Object.keys(S.ents).length,base:S.base.length,est:WSYNC.estado})));
+console.log('inventariador escribe base:',await I.evaluate(async()=>{try{await netApi('POST',null,{op:'put',ws:WS_KEY,ver:'abcdef1',i:0,d:'x'});return 'PERMITIDO (mal)';}catch(e){return e.status+' '+e.message;}}));
+await I.evaluate(()=>{USR.db.collection('campo').doc('k~1').set({ent:'K',cod:'1',user:'inv1',estado:'BUENO'});});await I.waitForTimeout(1500);
+console.log('principal ve campo del inventariador:',await V.evaluate(async()=>{const q=await USR.db.collection('campo').get();return q.docs.map(d=>d.data().user).join(',');}));
+const C=await page('C');await login(C,'otro','o1');console.log('otra cuenta ve campo:',await C.evaluate(async()=>{const q=await USR.db.collection('campo').get();return q.size;}));
+console.log(errs.join('\n'));await b.close();})();
