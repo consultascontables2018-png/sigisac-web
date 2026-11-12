@@ -2329,7 +2329,7 @@ const REP = (() => {
   const AN_H2 = ['', '', 'DENOMINACIÓN', 'MARCA', 'MODELO', 'TIPO', 'COLOR', 'SERIE', 'DIMENSIONES', '', '', '', 'VALOR', 'CUENTA', 'VALOR', 'CUENTA', '', ''];
   const anTit = () => `ANÁLISIS (CUENTA CONTABLE 1503) ${ent()}-${per()}`;
   const anFila = x => [x.n, x.b.cod || '', x.b.den || '', x.b.marca || '', x.b.modelo || '', x.b.tipo || '', x.b.color || '', x.b.serie || '', x.b.dim || '', x.b.estado || '', x.b.doc || '', x.b.fecha ? fmtD(x.b.fecha) : '', x.pv, x.pc || '', x.cv === '' ? '' : x.cv, x.cc || '', x.corr || '', x.siaf || ''];
-  function anXlsx(R) { const rows = [], merges = [], HD = { f: 'n95b', fill: 'anY', b: 4, a: 'c', wrap: true }, TD = { f: 'n95', fill: 'anB', b: 4, a: 'c', wrap: true };
+  function anXlsx(R) { const rows = [], merges = [], HD = { f: 'n95b', fill: 'anY', b: 4, a: 'c', wrap: true }, TD = { f: 'n95', b: 4, a: 'c', wrap: true }; /* filas en fondo blanco y del mismo alto */
     rows.push({ h: 36, cells: [{ v: anTit(), s: { f: 'anT', b: 0, a: 'c' } }] }); merges.push('A1:R1');
     rows.push({ h: 24, cells: AN_H1.map(v => ({ v, s: HD })) }); rows.push({ h: 30, cells: AN_H2.map(v => ({ v, s: HD })) });
     merges.push('C2:I2', 'M2:N2', 'O2:P2'); ['A', 'B', 'J', 'K', 'L', 'Q', 'R'].forEach(l => merges.push(`${l}2:${l}3`));
@@ -2353,9 +2353,10 @@ const REP = (() => {
       AN_H2.forEach((t, i) => { if (!t) return; pdf.rect(xs[i], y + h1, W[i], h2, HY, HB, 0.5); cellTxt(wrap(t, W[i], true), xs[i], W[i], y + h1, h2, 'c', true, 7); });
       y += h1 + h2; };
     head(); const data = R.map(anFila);
-    data.forEach(r => { const L = r.map((v, i) => wrap(i === 12 || i === 14 ? (v === '' ? '' : fmtN(v)) : v, W[i], false)), h = Math.max(18, Math.max(...L.map(l => l.length)) * lh + 6);
+    const LL = data.map(r => r.map((v, i) => wrap(i === 12 || i === 14 ? (v === '' ? '' : fmtN(v)) : v, W[i], false))), HU = Math.max(18, Math.max(1, ...LL.map(L => Math.max(...L.map(l => l.length)))) * lh + 6); /* todas las filas del mismo alto */
+    data.forEach((r, ri) => { const L = LL[ri], h = HU;
       if (y + h > pdf.H - 40) { pdf.addPage(); y = 30; head(); }
-      L.forEach((ln, i) => { pdf.rect(xs[i], y, W[i], h, BY, LN, 0.4); cellTxt(ln, xs[i], W[i], y, h, i === 12 || i === 14 ? 'r' : 'c', false); }); y += h; });
+      L.forEach((ln, i) => { pdf.rect(xs[i], y, W[i], h, [1, 1, 1], LN, 0.4); cellTxt(ln, xs[i], W[i], y, h, i === 12 || i === 14 ? 'r' : 'c', false); }); y += h; });
     if (y + 22 > pdf.H - 30) { pdf.addPage(); y = 30; }
     pdf.text(xs[0] + (xs[12] - xs[0]) / 2, y + 14, 'TOTALES', 9, { align: 'center', bold: true, color: BK });
     [12, 14].forEach(i => pdf.text(xs[i] + W[i] - 3, y + 14, fmtN(sumCol(data, i)), 9, { align: 'right', bold: true, color: BK })); }
