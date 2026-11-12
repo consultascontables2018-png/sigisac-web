@@ -1828,7 +1828,8 @@ const IDB = {
   db: null,
   async open() { if (this.db) return this.db; return this.db = await new Promise((res, rej) => { const r = indexedDB.open('sigisac', 1); r.onupgradeneeded = () => r.result.createObjectStore('kv'); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }); },
   async get(k) { try { const db = await this.open(); return await new Promise((res, rej) => { const t = db.transaction('kv').objectStore('kv').get(k); t.onsuccess = () => res(t.result); t.onerror = () => rej(t.error); }); } catch (e) { return null; } },
-  async set(k, v) { try { const db = await this.open(); return await new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(true); t.onerror = () => rej(t.error); }); } catch (e) { return false; } }
+  async set(k, v) { try { const db = await this.open(); return await new Promise((res, rej) => { const t = db.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = () => res(true); t.onerror = () => rej(t.error); }); } catch (e) { return false; } },
+  async keys() { try { const db = await this.open(); return await new Promise((res, rej) => { const t = db.transaction('kv').objectStore('kv').getAllKeys(); t.onsuccess = () => res(t.result || []); t.onerror = () => rej(t.error); }); } catch (e) { return []; } }
 };
 let saveTimer = null, savedOk = true;
 /* Usuarios: lista única del navegador (no pertenece a ninguna base de trabajo). Cada usuario abre su propia base (WS_KEY). */
@@ -4131,7 +4132,7 @@ VIEWS.data = { render(el) {
     </div>
       ${box('Data SINABIP', 'database', 'Reporte de bienes del SINABIP en Excel o TXT. Se usa para completar características en Campo y cruzar registros.', 'sinabip', fmtI((S.sinabip || []).length) + ' bienes' + ((S.sinabip || []).length && S.cfg.sinabipBajas ? ` · ${fmtI(S.cfg.sinabipBajas)} de baja excluidos` : ''))}
   </div>
-  <div class="actions">${act('Cruce SIGA MP – inventario', 'git-compare-arrows', 'Faltantes y sobrantes al instante', 'cruce')}${act('Respaldo completo', 'hard-drive-download', 'Descarga un .json con toda la información', 'backup')}${act('Restaurar respaldo', 'folder-open', 'Carga un respaldo .json', 'restore')}${act('Restablecer datos de ejemplo', 'rotate-ccw', 'Vuelve a la data de El Tambo 2025', 'reset')}</div>
+  <div class="actions">${act('Cruce SIGA MP – inventario', 'git-compare-arrows', 'Faltantes y sobrantes al instante', 'cruce')}${act('Respaldo completo', 'hard-drive-download', 'Descarga un .json con toda la información', 'backup')}${act('Restaurar respaldo', 'folder-open', 'Carga un respaldo .json', 'restore')}${act('Recuperar base de trabajo', 'history', 'Versiones guardadas en la nube y en este navegador', 'wsRecup')}${act('Restablecer datos de ejemplo', 'rotate-ccw', 'Vuelve a la data de El Tambo 2025', 'reset')}</div>
   ${card('Historial de cargas y operaciones', 'history', '<div id="tblLog"></div>')}</div>
   <input type="file" hidden id="restoreFile" accept=".json">`;
   dataTable($('#tblLog'), { rows: S.log || [], pageSize: 10, cols: [{ h: 'Fecha', fn: r => new Date(r.t).toLocaleString('es-PE') }, { h: 'Usuario', k: 'u' }, { h: 'Operación', k: 'msg' }] });
@@ -5125,33 +5126,91 @@ function wsSchedule(ms = 5000) { if (!USR.db || !SESSION || WSYNC.aplicando || e
 async function wsPush() { if (!USR.db || !SESSION || esInv(SESSION) || WSYNC.aplicando) return; if (WSYNC.subiendo) return wsSchedule(3000);
   const key = WS_KEY; WSYNC.subiendo = true;
   try { const js = wsJson(), hs = await wsHash(js); if (hs === WSYNC.hash) { WSYNC.dirty = false; return; } /* sin cambios reales en la base de trabajo */
-    const data = await wsGz(js), n = Math.ceil(data.length / WS_PARTE), ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 5), t = new Date().toISOString(), col = USR.db.collection(wsCol(key));
-    for (let i = 0; i < n; i++) await col.doc(ver + '_' + i).set({ ver, i, d: data.slice(i * WS_PARTE, (i + 1) * WS_PARTE) });
-    await USR.db.collection('wsman').doc(wsMan(key)).set({ ws: key, ver, n, t, dev: SEG.dev?.id || '', user: SESSION.user, nombre: SESSION.nombre || '', size: data.length });
-    const prev = WSYNC.ver; Object.assign(WSYNC, { ver, t, dirty: false, hash: hs }); IDB.set('wsync:' + key, { ver, t, hash: hs });
-    if (prev && prev !== ver) col.where('ver', '==', prev).get().then(q => q.docs.forEach(d => col.doc(d.id).delete().catch(() => { }))).catch(() => { });
+    const data = await wsGz(js), n = Math.ceil(data.length / WS_PARTE), ver = Date.now().toString(36) + Math.random().toString(36).slice(2, 5), t = new Date().toISOString(), col = USR.db.collection(wsCol(key)), nb = wsCont(S), nom = wsNom(S);
+    for (let i = 0; i < n; i++) await col.doc(ver + '_' + i).set({ ver, i, n, nb, t, nom, d: data.slice(i * WS_PARTE, (i + 1) * WS_PARTE) });
+    await USR.db.collection('wsman').doc(wsMan(key)).set({ ws: key, ver, n, t, nb, nom, dev: SEG.dev?.id || '', user: SESSION.user, nombre: SESSION.nombre || '', size: data.length });
+    Object.assign(WSYNC, { ver, t, dirty: false, hash: hs }); IDB.set('wsync:' + key, { ver, t, hash: hs });
+    wsPodar(col, ver).catch(() => { }); /* las versiones anteriores se conservan como historial recuperable */
     const el = $('#saveState'); if (el) { el.textContent = 'Guardado y sincronizado en la nube'; el.className = 'save ok'; }
   } catch (e) { console.warn('wsPush', e); const el = $('#saveState'); if (el) { el.textContent = 'Guardado en este navegador (sin sincronizar)'; el.className = 'save warn'; } setTimeout(() => wsSchedule(), 20000); }
   finally { WSYNC.subiendo = false; } }
 async function wsPull(key, m) { const col = USR.db.collection(wsCol(key)); const q = await col.where('ver', '==', m.ver).get(); const P = q.docs.map(d => d.data()).sort((a, b) => a.i - b.i);
   if (P.length !== m.n) return false; const st = JSON.parse(await LIB.gunzipB64(P.map(x => x.d).join('')));
   if (key !== WS_KEY || !st || !st.inv) return false;
+  const locN = wsCont(S), remN = wsCont(st);
+  if (locN > 0 && !esInv(SESSION) && (remN === 0 || (!WSYNC.t && locN > remN))) { /* nunca se reemplaza una base con información por una vacía o más pequeña: se conserva la de este ordenador y se sube */
+    Object.assign(WSYNC, { ver: m.ver, t: m.t, hash: '', dirty: true, listo: true }); wsSchedule(800); return 'kept'; }
+  if (locN > 0) await wsBak(key, S, 'Antes de actualizar desde la nube');
   const sucio = !!WSYNC.hash && (await wsHash(wsJson())) !== WSYNC.hash;
   if (sucio) { /* cambios locales aún no subidos: se conservan los registros de Campo más recientes de este ordenador */
     const mp = new Map((st.inv || []).map((b, i) => [String(b.cod), i])); for (const b of S.inv || []) { const i = mp.get(String(b.cod)); if (i == null) st.inv.push(b); else if (String(b.verifT || '') > String(st.inv[i].verifT || '')) st.inv[i] = b; } }
   WSYNC.aplicando = true;
   try { st.ver = VER; S = wsAdopt(wsPrep(st)); entEnsure(); S.inv.forEach(b => b.sit = b.sit || sitAuto(b.estado)); invalidate(); await IDB.set(WS_KEY, S); const hs = sucio ? '' : await wsHash(wsJson()); Object.assign(WSYNC, { ver: m.ver, t: m.t, hash: hs, dirty: sucio }); IDB.set('wsync:' + key, { ver: m.ver, t: m.t, hash: hs });
-    if (typeof campoSync === 'function') { CAMPO.key = ''; campoSync(); } refresh(); entregPublicar?.();
+    if (typeof campoSync === 'function') { CAMPO.key = ''; campoSync(); } if ($('#wbT') && wsCont(S)) closeModal(); refresh(); entregPublicar?.();
   } finally { WSYNC.aplicando = false; }
   if (sucio) wsSchedule(1500); return true; }
-async function wsWatch() { if (!USR.db || !SESSION) return; const key = WS_KEY; if (WSYNC.key === key && WSYNC.unsub) return; wsStop(); WSYNC.key = key;
+async function wsWatch() { wsDiario(); if (!USR.db || !SESSION) return; const key = WS_KEY; if (WSYNC.key === key && WSYNC.unsub) return; wsStop(); WSYNC.key = key;
+  setTimeout(() => { if (WS_KEY === key && SESSION && !esInv(SESSION) && !wsCont(S)) wsAutoRecup(key); }, 7000);
   const loc = (await IDB.get('wsync:' + key)) || {}; WSYNC.ver = loc.ver || ''; WSYNC.t = loc.t || ''; WSYNC.hash = loc.hash || '';
   try { WSYNC.unsub = USR.db.collection('wsman').doc(wsMan(key)).onSnapshot(async s => { if (key !== WS_KEY || !SESSION) return;
       if (!s.exists) { if (!WSYNC.listo) { WSYNC.listo = true; if (!esInv(SESSION)) { WSYNC.dirty = true; wsSchedule(1200); } } return; }
       const m = s.data(); if (m.ver === WSYNC.ver) { if (!WSYNC.listo) { WSYNC.listo = true; if (WSYNC.dirty) wsSchedule(); } return; }
       if (WSYNC.t && String(m.t) <= String(WSYNC.t)) { WSYNC.listo = true; if (WSYNC.dirty) wsSchedule(1200); return; }
-      try { const ok = await wsPull(key, m); WSYNC.listo = true; if (ok) toast(m.dev && m.dev !== SEG.dev?.id ? `Avances actualizados desde otro ordenador (${m.nombre || m.user || ''}, ${segHace(m.t)})` : 'Base de trabajo actualizada desde la nube', 'ok', 5000); }
+      try { const ok = await wsPull(key, m); WSYNC.listo = true; if (ok === 'kept') return; if (ok) toast(m.dev && m.dev !== SEG.dev?.id ? `Avances actualizados desde otro ordenador (${m.nombre || m.user || ''}, ${segHace(m.t)})` : 'Base de trabajo actualizada desde la nube', 'ok', 5000); }
       catch (e) { console.warn('wsPull', e); WSYNC.listo = true; } }, () => { }); } catch (e) { console.warn('wsWatch', e); } }
+
+
+/* ---------- Protección de la base de trabajo: copias, historial y recuperación ----------
+   La información registrada nunca se pierde por una actualización ni por ingresar desde otro ordenador:
+   1) una base con información nunca se reemplaza por una vacía o más pequeña sin pedirlo;
+   2) antes de cada reemplazo se guarda una copia en este navegador (y una copia diaria al ingresar);
+   3) en la nube se conservan las versiones anteriores (las más recientes, una por día y la más completa);
+   4) Configuración › Data › Recuperar base de trabajo permite ver y restaurar cualquiera de ellas.                    */
+function wsCont(st) { if (!st) return 0; let n = 0; const una = e => { if (!e) return; n += (e.inv || []).length + (e.base || []).length + (e.sinabip || []).length + (e.bal ? 25 : 0) + (e.cfg?.entidad?.nombre ? 5 : 0); };
+  una({ inv: st.inv, base: st.base, sinabip: st.sinabip, bal: st.bal, cfg: st.cfg }); for (const k in (st.ents || {})) una(st.ents[k]); return n; }
+function wsNom(st) { if (!st) return ''; const L = [st.cfg?.entidad?.nombre, ...Object.values(st.ents || {}).map(e => e?.cfg?.entidad?.nombre)].filter(Boolean); return [...new Set(L)].join(' · ').slice(0, 200); }
+function wsRes(st) { const L = [{ cfg: st.cfg, inv: st.inv, base: st.base, sinabip: st.sinabip, bal: st.bal }, ...Object.values(st.ents || {})].filter(Boolean);
+  return L.map(e => `<li><b>${h(e.cfg?.entidad?.nombre || 'Entidad sin nombre')}</b> · ${fmtI((e.inv || []).length)} bienes inventariados · ${fmtI((e.base || []).length)} SIGA MP · ${fmtI((e.sinabip || []).length)} SINABIP${e.bal ? ' · balance SIAF' : ''}</li>`).join(''); }
+async function wsBak(key, st, origen) { try { const nb = wsCont(st); if (!nb) return; const { fam, cls, items, ...r } = st, c = st.catCustom ? st : r, nom = wsNom(st);
+  const L = (await IDB.get('bak:' + key)) || []; if (L[0] && L[0].nb === nb && L[0].nom === nom && Date.now() - new Date(L[0].t) < 600000) return;
+  L.unshift({ t: new Date().toISOString(), origen, nb, nom, st: c }); await IDB.set('bak:' + key, L.slice(0, 8)); } catch (e) { console.warn('wsBak', e); } }
+async function wsDiario() { try { if (!SESSION || !wsCont(S)) return; const L = (await IDB.get('bak:' + WS_KEY)) || []; if (L.some(b => String(b.t).slice(0, 10) === todayISO())) return; await wsBak(WS_KEY, S, 'Copia diaria al ingresar'); } catch (e) { } }
+const wsVerT = v => parseInt(String(v).slice(0, -3), 36) || 0;
+async function wsVersiones(key) { const q = await USR.db.collection(wsCol(key)).get(), V = new Map();
+  q.docs.forEach(d => { const x = d.data(); if (!x?.ver) return; const v = V.get(x.ver) || { ver: x.ver, ids: [], is: new Set(), size: 0, n: x.n, nb: x.nb, nom: x.nom || '', t: x.t || '' }; v.ids.push(d.id); v.is.add(x.i); v.size += (x.d || '').length; if (x.nb != null) v.nb = x.nb; if (x.n) v.n = x.n; if (x.nom) v.nom = x.nom; V.set(x.ver, v); });
+  return [...V.values()].map(v => { const n = v.n || (Math.max(...v.is) + 1); return { ...v, completa: [...Array(n).keys()].every(i => v.is.has(i)), tm: wsVerT(v.ver) }; }).sort((a, b) => b.tm - a.tm); }
+async function wsPodar(col, actual) { const L = await wsVersiones(WS_KEY), keep = new Set([actual]), dias = new Set(); let tot = 0;
+  const rica = L.filter(v => v.nb != null && v.completa).sort((a, b) => b.nb - a.nb)[0]; if (rica) keep.add(rica.ver);
+  L.forEach((v, i) => { const dia = new Date(v.tm).toISOString().slice(0, 10); if (i < 3 || v.nb == null || (!dias.has(dia) && dias.size < 7)) { if (tot + v.size < 9e6 || i < 2 || v.nb == null) { keep.add(v.ver); dias.add(dia); } } });
+  L.forEach(v => { if (keep.has(v.ver)) tot += v.size; });
+  for (const v of L) if (!keep.has(v.ver) || (!v.completa && v.ver !== actual && Date.now() - v.tm > 3600000)) for (const id of v.ids) await col.doc(id).delete().catch(() => { }); }
+async function wsBajar(key, v) { const col = USR.db.collection(wsCol(key)); const q = await col.where('ver', '==', v.ver).get(); const P = q.docs.map(d => d.data()).sort((a, b) => a.i - b.i);
+  const st = JSON.parse(await LIB.gunzipB64(P.map(x => x.d).join(''))); if (!st || !st.inv) throw new Error('La versión no se pudo leer'); return st; }
+async function wsRestaurar(st, origen) { if (!st || !st.inv) return toast('Copia no válida', 'bad'); await wsBak(WS_KEY, S, 'Antes de restaurar'); st = JSON.parse(JSON.stringify(st)); st.ver = VER; delete st.nuevo;
+  WSYNC.aplicando = true; try { S = wsAdopt(wsPrep(st)); entEnsure(); S.inv.forEach(b => b.sit = b.sit || sitAuto(b.estado)); invalidate(); await IDB.set(WS_KEY, S); } finally { WSYNC.aplicando = false; }
+  WSYNC.hash = ''; mutate('Base de trabajo restaurada: ' + origen); wsSchedule(600); closeModal(); route(); if (typeof renderEntMenu === 'function' && !$('#entMenu')?.hidden) renderEntMenu(); if (typeof entregPublicar === 'function') entregPublicar(); toast('Base de trabajo restaurada: ' + (wsNom(S) || origen), 'ok', 6000); }
+const WSREC = { L: [] };
+async function wsCandidatos(key) { const out = [];
+  if (USR.db) { try { for (const v of await wsVersiones(key)) if (v.completa) out.push({ tipo: 'nube', t: new Date(v.tm).toISOString(), nb: v.nb, nom: v.nom, size: v.size, actual: v.ver === WSYNC.ver, v }); } catch (e) { console.warn('wsVersiones', e); } }
+  for (const b of (await IDB.get('bak:' + key)) || []) out.push({ tipo: 'copia', t: b.t, nb: b.nb, nom: b.nom, origen: b.origen, st: b.st });
+  for (const k of await IDB.keys()) { if (typeof k !== 'string' || k === key || !(k === 'state' || /^ws-/.test(k))) continue; const st = await IDB.get(k); const nb = wsCont(st); if (k === 'state' && st?.inv?.length === EMB.inv.length && /EL TAMBO/.test(wsNom(st)) && !(st.ents && Object.keys(st.ents).length > 1)) continue; if (nb && st.inv) out.push({ tipo: 'local', t: '', nb, nom: wsNom(st), origen: k === 'state' ? 'Base del administrador en este navegador' : 'Otra base guardada en este navegador (' + k.slice(3) + ')', st }); }
+  return out; }
+async function wsAutoRecup(key) { try { const L = (await wsCandidatos(key)).filter(c => c.nb !== 0 && c.tipo !== 'local').sort((a, b) => String(b.t).localeCompare(String(a.t)));
+  let k = 0; for (const c of L) if (c.nb == null && c.v && k++ < 8) { try { c.st = await wsBajar(key, c.v); c.nb = wsCont(c.st); c.nom = c.nom || wsNom(c.st); } catch (e) { c.nb = 0; } }
+  const best = L.filter(c => c.nb > 0).sort((a, b) => b.nb - a.nb || String(b.t).localeCompare(String(a.t)))[0]; if (!best || wsCont(S) || WS_KEY !== key || !SESSION) return; WSREC.L = [best];
+  $('#modal').innerHTML = `<div class="m-card aviso" role="dialog" aria-modal="true" aria-labelledby="arT"><div class="av-ico">${ic('history')}</div><h3 id="arT">Encontramos su información guardada</h3><p>Su base de trabajo está vacía en este ordenador, pero hay una versión guardada el <b>${h(new Date(best.t).toLocaleString('es-PE'))}</b>${best.nom ? ` de <b>${h(best.nom)}</b>` : ''}${best.nb ? ` (${fmtI(best.nb)} registros)` : ''}.</p><p style="font-size:12.5px">Puede restaurarla ahora o revisar todas las versiones en Configuración › Data › Recuperar base de trabajo.</p>
+    <div class="av-btns"><button class="btn-glow" data-a="wsRecOk" data-i="0">${ic('rotate-ccw')}Restaurar</button><button class="mini" data-a="wsRecup">${ic('history')}Ver versiones</button><button class="mini ghost" data-close>${ic('x')}Ahora no</button></div></div>`; $('#modal').hidden = false; } catch (e) { console.warn('wsAutoRecup', e); } }
+GLOBAL_ACT_EXTRA.wsRecup = async () => { if (esInv(SESSION)) return toast('Su base la administra el usuario principal', 'warn');
+  $('#modal').innerHTML = `<div class="m-card aviso" role="dialog" aria-modal="true"><div class="av-ico">${ic('history')}</div><h3>Buscando versiones guardadas…</h3></div>`; $('#modal').hidden = false;
+  const L = WSREC.L = (await wsCandidatos(WS_KEY)).sort((a, b) => String(b.t).localeCompare(String(a.t)));
+  const et = { nube: ['En la nube', '--c-home'], copia: ['Copia en este navegador', '--ok'], local: ['Este navegador', '--warn'] };
+  const fila = (c, i) => `<tr><td><span class="badge" style="--k:var(${et[c.tipo][1]})">${et[c.tipo][0]}</span>${c.actual ? ' <span class="badge" style="--k:var(--ok)">actual</span>' : ''}</td><td>${c.t ? h(new Date(c.t).toLocaleString('es-PE')) : '—'}</td><td>${h(c.nom || (c.nb === 0 ? 'Vacía' : '—'))}<div class="muted" style="font-size:11.5px">${h(c.origen || '')}</div></td><td class="r">${c.nb == null ? '—' : fmtI(c.nb)}</td><td class="r"><button class="mini" data-a="wsRecVer" data-i="${i}">${ic('eye')}Ver</button></td></tr>`;
+  modal('Recuperar base de trabajo', `<p class="muted" style="margin:0 0 10px">Versiones de su base guardadas en la nube y en este navegador. Al restaurar una, la base actual se guarda antes como copia, así que puede volver atrás.</p>
+    ${L.length ? `<div class="tbl-wrap" style="max-height:52vh;overflow:auto"><table><thead><tr><th>Origen</th><th>Fecha</th><th>Entidades</th><th class="r">Registros</th><th></th></tr></thead><tbody>${L.map(fila).join('')}</tbody></table></div>` : `<div class="alert" style="--k:var(--warn)">${ic('triangle-alert')}<div>No se encontraron versiones guardadas para este usuario en la nube ni en este navegador. Si registró su información en otro ordenador, ingrese allí con su usuario: SIGISAC la conservará y la subirá a la nube.</div></div>`}`, '', { icon: 'history' }); };
+GLOBAL_ACT_EXTRA.wsRecVer = async b => { const c = WSREC.L[+b.dataset.i]; if (!c) return; try { const st = c.st || await wsBajar(WS_KEY, c.v); c.st = st;
+  $('#modal').innerHTML = `<div class="m-card aviso" role="alertdialog" aria-modal="true" aria-labelledby="rvT"><div class="av-ico">${ic('rotate-ccw')}</div><h3 id="rvT">Restaurar esta versión</h3><p>${c.t ? 'Guardada el <b>' + h(new Date(c.t).toLocaleString('es-PE')) + '</b>.' : h(c.origen || '')}</p><ul style="text-align:left;font-size:12.5px;margin:6px 0 10px;padding-left:18px">${wsRes(st)}</ul><p style="font-size:12.5px">La base actual se guardará como copia antes de restaurar.</p>
+    <div class="av-btns"><button class="btn-glow" data-a="wsRecOk" data-i="${b.dataset.i}">${ic('rotate-ccw')}Restaurar</button><button class="mini ghost" data-a="wsRecup">${ic('arrow-left')}Volver</button></div></div>`; } catch (e) { toast(e.message, 'bad'); } };
+GLOBAL_ACT_EXTRA.wsRecOk = async b => { const c = WSREC.L[+b.dataset.i]; if (!c) return; try { const st = c.st || await wsBajar(WS_KEY, c.v); await wsRestaurar(st, c.t ? new Date(c.t).toLocaleString('es-PE') : (c.origen || 'copia')); } catch (e) { toast(e.message, 'bad'); } };
 
 /* ---------- Eventos globales ---------- */
 document.addEventListener('click', async e => {
