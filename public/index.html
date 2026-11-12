@@ -186,6 +186,7 @@ h1,h2,h3{margin:0}
 
 /* Tablas */
 .tbl-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+.an-src{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
 .tbl-bar .input{flex:1;min-width:200px;max-width:420px}
 .tbl-wrap{overflow:auto;border-radius:12px;border:1px solid var(--line);max-height:560px;background:#fff}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -5131,11 +5132,52 @@ function autoCorrForce() { const a = S.cfg.autoCorr; S.cfg.autoCorr = true; cons
 function an1503Rows() { let n = 0; return S.inv.filter(b => b && !ENG.sinCodigo(b.cod)).map(b => { const a = b.an || {}, pc = String(b.cta || '');
   /* del inventario valorizado se registra solo hasta REGISTRO PATRIMONIAL (valor y cuenta); lo demás lo completa el analista */
   return { b, n: ++n, pv: +b.valor || 0, pc, cv: a.cv != null && a.cv !== '' ? +a.cv : '', cc: a.cc || '', corr: a.corr || '', siaf: a.siaf || '' }; }); }
+/* ---- Análisis 1503: importación de reportes contables (CLARISA y SIAF Landing) ----
+   Cada reporte se lee (Excel o TXT), se reconocen las columnas por su encabezado y se cruza por código patrimonial con el
+   inventario valorizado del saneamiento. Llena REGISTRO CONTABLE (valor y cuenta) y SIAF. No toca el inventario de los usuarios. */
+const AN_SRC = [['clarisa', 'CLARISA', 'file-spreadsheet', '--c-cfg'], ['siaf', 'SIAF Landing', 'landmark', '--c-san']];
+const sanArr = () => SAN_ON ? S.inv : (Array.isArray(S.sanInv) ? S.sanInv : (S.sanInv = []));
+const anCod = v => String(v ?? '').replace(/\.0+$/, '').replace(/\D/g, '');
+const anCta = v => { let c = String(v ?? '').trim().replace(/\s+/g, ''); if (/^\d{6,}$/.test(c)) c = c.slice(0, 4) + '.' + c.slice(4); return c.toUpperCase(); };
+const anNum = v => { if (typeof v === 'number') return v; let t = String(v ?? '').trim().replace(/[S\/\s]/g, ''); if (!t) return NaN; if (/^-?[\d.]+,\d{1,2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.'); else t = t.replace(/,/g, ''); if (/^\(.*\)$/.test(t)) t = '-' + t.slice(1, -1); return parseFloat(t); };
+function anSrcParse(sheets) {
+  const N = x => ENG.norm(String(x ?? '')).toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+  for (const sh of sheets) { const rows = sh.rows || [];
+    for (let r = 0; r < Math.min(rows.length, 40); r++) { const H = (rows[r] || []).map(N); let cod = -1, val = -1, cta = -1, siaf = -1;
+      H.forEach((x, i) => {
+        if (cod < 0 && /^(COD|CODIGO)( (PATRIMONIAL|ACTIVO|DEL BIEN|BIEN|SBN|PATRIM))?$|CODIGO PATRIMONIAL|CODIGO ACTIVO|COD PATRIMONIAL/.test(x)) cod = i;
+        else if (siaf < 0 && /SIAF|EXPEDIENTE|^EXP\b|N REGISTRO|NRO REGISTRO|REGISTRO SIAF/.test(x)) siaf = i;
+        else if (cta < 0 && /CUENTA|^CTA\b|MAYOR|CLASIFICADOR CONTABLE/.test(x) && !/DESCRIP|NOMBRE|DENOMINA/.test(x)) cta = i;
+        else if (/VALOR|IMPORTE|MONTO|SALDO|COSTO/.test(x) && !/RESIDUAL|DEPRECIA|NETO|NUM|DESCRIP/.test(x) && (val < 0 || /CONTABLE|ADQUISICION|LIBROS/.test(x))) val = i; });
+      if (cod < 0 || (val < 0 && cta < 0 && siaf < 0)) continue;
+      const M = new Map(); let filas = 0;
+      for (let k = r + 1; k < rows.length; k++) { const w = rows[k] || [], c = anCod(w[cod]); if (c.length < 6) continue; filas++;
+        const o = M.get(c) || { cv: 0, hayV: false, cc: '', siaf: [] };
+        if (val >= 0) { const v = anNum(w[val]); if (isFinite(v)) { o.cv += v; o.hayV = true; } }
+        if (cta >= 0 && String(w[cta] ?? '').trim()) o.cc = anCta(w[cta]);
+        if (siaf >= 0) { const t = String(w[siaf] ?? '').replace(/\.0+$/, '').trim(); if (t && !o.siaf.includes(t)) o.siaf.push(t); }
+        M.set(c, o); }
+      if (M.size) return { M, filas, hoja: sh.name, cols: { val: val >= 0, cta: cta >= 0, siaf: siaf >= 0 } }; } }
+  return null; }
+async function anSrcLeer(k, f) { const t = AN_SRC.find(x => x[0] === k)[1];
+  try { toast(`Leyendo reporte ${t}: ${f.name}…`, 'info'); const p = anSrcParse(await IMP.readFile(f));
+    if (!p) throw new Error(`No se reconoció el reporte ${t}. Debe tener una columna de CÓDIGO PATRIMONIAL y al menos una de VALOR, CUENTA o SIAF/EXPEDIENTE.`);
+    const inv = sanArr(), idx = new Map(); inv.forEach(b => { const c = anCod(b.cod); if (c) { idx.set(c, b); idx.set(c.padStart(12, '0'), b); } });
+    let ok = 0; const no = []; p.M.forEach((o, c) => { if (idx.get(c) || idx.get(c.padStart(12, '0'))) ok++; else no.push(c); });
+    if (!inv.length) throw new Error('Primero importe el inventario valorizado en Procesar reporte patrimonial.');
+    VIEWS.analisis.srcPend = { k, t, p, nombre: f.name };
+    const cols = [p.cols.val && 'Valor contable', p.cols.cta && 'Cuenta contable', p.cols.siaf && 'SIAF'].filter(Boolean);
+    modal(`Importar reporte ${t}`, `<p>Se leyeron <b>${fmtI(p.filas)}</b> filas (${fmtI(p.M.size)} códigos) de <b>${h(f.name)}</b>${p.hoja ? ` · hoja ${h(p.hoja)}` : ''}.</p>
+      <div class="kpis" style="margin:10px 0"><div class="kpi"><small>Coinciden con el análisis</small><b>${fmtI(ok)}</b></div><div class="kpi"><small>No están en el inventario valorizado</small><b>${fmtI(no.length)}</b></div></div>
+      <div class="alert" style="--k:var(--c-san)">${ic('info')}<div>Se llenarán las columnas <b>${cols.join(', ')}</b> del análisis, cruzando por código patrimonial. Los datos que ya estaban en esas columnas se reemplazan. Solo afecta al Análisis de Saneamiento contable 1503; no modifica el inventario de los usuarios.</div></div>${no.length ? `<p class="muted" style="margin-top:8px">Códigos sin coincidencia (primeros): ${no.slice(0, 8).map(h).join(', ')}${no.length > 8 ? '…' : ''}</p>` : ''}`,
+      `<button class="mini ghost" data-a="anSrcCancelar">${ic('x')}Cancelar</button><button class="mini" data-a="anSrcAceptar" ${ok ? '' : 'disabled'}>${ic('check')}Aceptar</button>`, { tone: 'info', icon: 'upload' });
+  } catch (e) { console.error(e); toast(e.message, 'bad', 8000); } }
+
 VIEWS.analisis = { pag: 0, q: '', render(el) {
   const m = M('analisis'), R = an1503Rows(), tPv = R.reduce((a, x) => a + x.pv, 0), tCv = R.reduce((a, x) => a + (+x.cv || 0), 0), nCorr = R.filter(x => x.corr).length;
   el.innerHTML = `<div style="--c:var(${m.c});display:grid;gap:18px">
   <div class="kpis">${kpi('Bienes analizados', fmtI(R.length), 'del inventario valorizado importado', '--c-san')}${kpi('Registro patrimonial', money(tPv))}${kpi('Registro contable', money(tCv))}${kpi('Registrados en contable', fmtI(R.filter(x => x.cv !== '').length), `de ${fmtI(R.length)} bienes`)}${kpi('Con corrección de cuenta', fmtI(nCorr), 'anotadas por el analista', nCorr ? '--warn' : '--ok')}</div>
-  ${card('Análisis de la cuenta contable 1503', 'chart-bar-big', R.length ? `<div class="tbl-bar"><label class="input sm">${ic('search')}<input type="search" id="an-q" placeholder="Buscar código, denominación, cuenta…" value="${h(VIEWS.analisis.q)}"></label><span class="muted" id="an-n"></span></div><div id="anTbl"></div>` : `<div class="alert" style="--k:var(--warn)">${ic('info')}<div>Aún no hay inventario valorizado. Impórtelo en <b>Procesar reporte patrimonial › Importar invent. valorizado › Cargar</b>: el análisis se arma solo.</div></div>`, '', R.length ? exportBar('analisis1503') : '')}</div>`;
+  ${card('Análisis de la cuenta contable 1503', 'chart-bar-big', R.length ? `<div class="tbl-bar"><label class="input sm">${ic('search')}<input type="search" id="an-q" placeholder="Buscar código, denominación, cuenta…" value="${h(VIEWS.analisis.q)}"></label><span class="muted" id="an-n"></span><span class="an-src">${AN_SRC.map(([k, t, i, c]) => `<label class="mini" style="--c:var(${c});cursor:pointer" title="Importe el reporte ${h(t)} (Excel o TXT): llena Registro contable (valor y cuenta) y SIAF por código patrimonial">${ic(i)}Reporte ${h(t)}<input type="file" data-ansrc="${k}" hidden accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv,.prn"></label>`).join('')}</span></div><div id="anTbl"></div>` : `<div class="alert" style="--k:var(--warn)">${ic('info')}<div>Aún no hay inventario valorizado. Impórtelo en <b>Procesar reporte patrimonial › Importar invent. valorizado › Cargar</b>: el análisis se arma solo.</div></div>`, '', R.length ? exportBar('analisis1503') : '')}</div>`;
   if (!R.length) return;
   const draw = () => { const R = an1503Rows(), q = ENG.norm(VIEWS.analisis.q || ''), L = q ? R.filter(x => ENG.norm([x.b.cod, x.b.den, x.b.marca, x.b.modelo, x.b.serie, x.pc, x.cc, x.corr, x.siaf].join(' ')).includes(q)) : R;
     const PS = 50, pages = Math.max(1, Math.ceil(L.length / PS)); VIEWS.analisis.pag = Math.min(VIEWS.analisis.pag, pages - 1); const pg = VIEWS.analisis.pag, sl = L.slice(pg * PS, pg * PS + PS);
@@ -5150,11 +5192,18 @@ VIEWS.analisis = { pag: 0, q: '', render(el) {
   draw();
   $('#an-q').oninput = e => { VIEWS.analisis.q = e.target.value; VIEWS.analisis.pag = 0; draw(); };
   el.onclick = e => { const b = e.target.closest('[data-anp]'); if (b && !b.disabled) { VIEWS.analisis.pag = +b.dataset.anp; draw(); } };
-  el.onchange = e => { const t = e.target.closest('.an-in'); if (!t) return; const b = S.inv.find(x => String(x.cod) === t.dataset.an); if (!b) return; const k = t.dataset.k; b.an = b.an || {};
+  el.onchange = e => { const fi = e.target.closest('[data-ansrc]'); if (fi) { const f = fi.files?.[0], k = fi.dataset.ansrc; fi.value = ''; if (f) anSrcLeer(k, f); return; }
+    const t = e.target.closest('.an-in'); if (!t) return; const b = S.inv.find(x => String(x.cod) === t.dataset.an); if (!b) return; const k = t.dataset.k; b.an = b.an || {};
     if (k === 'cv') { const tx = String(t.value).replace(/,/g, '').trim(); if (tx === '') { b.an.cv = ''; } else { const v = parseFloat(tx); if (!isFinite(v)) { toast('Ingrese un valor numérico', 'warn'); t.value = b.an.cv === '' || b.an.cv == null ? '' : fmtN(b.an.cv); return; } b.an.cv = Math.round(v * 100) / 100; t.value = fmtN(b.an.cv); } }
     else b.an[k] = t.value.trim().toUpperCase();
     t.closest('tr').classList.toggle('an-corr', !!b.an.corr); mutate(`Análisis 1503 · ${b.cod}: ${k === 'cv' ? 'valor contable' : k === 'cc' ? 'cuenta contable' : k === 'corr' ? 'corrección de cuenta' : 'SIAF'} actualizado`);
-    if (k === 'cv') { const L = an1503Rows(), f = $('#anTbl tfoot td:nth-child(4) b'); if (f) f.textContent = fmtN(L.reduce((a, x) => a + (+x.cv || 0), 0)); } };
+    if (k === 'cv') { const L = an1503Rows(), f = $('#anTbl tfoot td:nth-child(4) b'); if (f) f.textContent = fmtN(L.reduce((a, x) => a + (+x.cv || 0), 0)); } }; }, act: {
+  anSrcCancelar() { VIEWS.analisis.srcPend = null; closeModal(); toast('Importación cancelada: el análisis no cambió', 'info'); },
+  anSrcAceptar() { const P = VIEWS.analisis.srcPend; closeModal(); if (!P) return; VIEWS.analisis.srcPend = null; const { p } = P; let n = 0;
+    sanArr().forEach(b => { const c = anCod(b.cod), o = p.M.get(c) || p.M.get(c.replace(/^0+/, '')); if (!o) return; b.an = b.an || {};
+      if (p.cols.val && o.hayV) b.an.cv = Math.round(o.cv * 100) / 100; if (p.cols.cta && o.cc) b.an.cc = o.cc; if (p.cols.siaf && o.siaf.length) b.an.siaf = o.siaf.join(' / ').toUpperCase(); b.an.src = P.k; n++; });
+    S.sanSrc = { ...(S.sanSrc || {}), [P.k]: { nombre: P.nombre, fecha: new Date().toISOString(), n } };
+    mutate(`Análisis 1503: reporte ${P.t} importado (${P.nombre}), ${n} bienes actualizados`); toast(`Reporte ${P.t}: ${fmtI(n)} bienes actualizados en Registro contable`, 'ok', 5000); refresh(); }
 } };
 
 /* ---------- Saneamiento: Corrección / Reclasificación / Depuración ---------- */
