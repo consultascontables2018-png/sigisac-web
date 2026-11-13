@@ -5167,13 +5167,13 @@ const AN_CAMPOS = [
   ['ent', 'Entidad / unidad ejecutora', false, /ENTIDAD|UNIDAD EJEC|^UE\b|SEC\w* EJEC|^RUC\b|^EJECUTORA/, null]
 ];
 const AN_C = Object.fromEntries(AN_CAMPOS.map(c => [c[0], c]));
-/* CLARISA: solo se reconocen y concilian DEBE, Nro. Docum. Compromiso, Cuenta contable, Año y Mes */
+/* CLARISA: solo se reconocen y concilian DEBE, Nro. Docum. Compromiso, Cuenta contable, Año y SIAF; las demás columnas no se usan */
 const AN_CL = [
   ['imp', 'DEBE', true, /^DEBE\b/, /HABER/],
   ['oc', 'Nro. Docum. Compromiso', false, /DOCUM\w* COMPROMISO|DOC\w* COMPROMISO|^COMPROMISO\b/, null],
   ['cta', 'Cuenta contable', true, /CUENTA|^CTA\b/, /DESCRIP|NOMBRE|DENOMINA|BANCARIA|CORRIENTE/],
-  ['anio', 'Año', true, /^ANO\b|^ANIO\b|EJERCICIO|ANO (DE )?REG|ANO EJE|ANO CONTAB/, /MES/],
-  ['mes', 'Mes', false, /^MES\b|MES (DE )?REG|MES CONTAB|MES EJE/, null]];
+  ['anio', 'Año', true, /^ANO\b|^ANIO\b|^A.{0,2}O$|EJERCICIO|ANO (DE )?REG|ANO EJE|ANO CONTAB/, /MES/],
+  ['siaf', 'SIAF', false, /SIAF|EXPEDIENTE|^EXP\b|NRO EXP|^N\w* EXP/, null]];
 const anCampos = k => k === 'clarisa' ? AN_CL : AN_CAMPOS;
 const anCdef = (k, f) => anCampos(k).find(c => c[0] === f) || AN_C[f];
 const AN_EST = {
@@ -5223,19 +5223,24 @@ function anCheck(f, vals) { const ne = vals.filter(v => v != null && String(v).t
     const tot = vals.length, con = ne.filter(v => !!anOC(v, true)).length; return { lvl: p < .05 ? 'warn' : 'ok', txt: `${fmtI(con)} de ${fmtI(tot)} filas con N° de O/C; las demás se buscarán como nota contable` }; }
   return { lvl: 'ok', txt: `${fmtI(n)} valores` }; }
 /* Detecta hoja, fila de encabezados y equivalencia de columnas */
-function anDetect(rows, k, hdrF) {
+function anDetect(rows, k, hdrF) { const C = anCampos(k), F = C.map(c => c[0]);
+  const esHdr = v => { const x = anH(v); return !!x && x.length < 60 && C.some(c => anHdrOk(c, x)); };
   let best = { hdr: -1, sc: 0 };
   if (hdrF != null && hdrF >= -1) best = { hdr: hdrF, sc: 9 };
-  else for (let r = 0; r < Math.min(rows.length, 40); r++) { let sc = 0; (rows[r] || []).forEach(v => { const x = anH(v); if (x && x.length < 60 && anCampos(k).some(c => anHdrOk(c, x))) sc++; }); if (sc > best.sc) best = { hdr: r, sc }; }
-  const hdr = best.sc >= 2 ? best.hdr : -1, H = hdr >= 0 ? (rows[hdr] || []).map(anH) : [], map = {};
-  AN_CAMPOS.forEach(c => map[c[0]] = -1);
-  const ORD = ['oc', 'mes', 'anio', 'siaf', 'cta', 'imp', 'doc', 'desc', 'ent'].filter(f => anCampos(k).some(c => c[0] === f));
-  H.forEach((x, i) => { if (!x) return; for (const f of ORD) if (map[f] < 0 && anHdrOk(anCdef(k, f), x)) { map[f] = i; break; } });
-  const data = rows.slice(hdr + 1, hdr + 301), usado = i => Object.values(map).includes(i);
-  const sv = S.sanMap?.[k]; if (sv) for (const f in sv) { if (!ORD.includes(f)) continue; const v = sv[f]; const i = typeof v === 'number' ? v : H.indexOf(v); if (i >= 0 && !usado(i) && anCheck(f, data.map(w => w?.[i])).lvl !== 'err') { map[f] = i; } }
-  const ref = AN_REF[k] || {}; for (const f in ref) if (map[f] < 0 && !usado(ref[f]) && anCheck(f, data.map(w => w?.[ref[f]])).lvl !== 'err') map[f] = ref[f];
-  return { hdr, map, sc: best.sc }; }
-function anValidar(I) { const rows = I.sheets[I.si].rows, data = rows.slice(I.hdr + 1, I.hdr + 301), out = {}, glob = [];
+  else for (let r = 0; r < Math.min(rows.length, 40); r++) { const sc = (rows[r] || []).filter(esHdr).length; if (sc > best.sc) best = { hdr: r, sc }; }
+  const hdr = best.sc >= 2 ? best.hdr : -1, map = {}; F.forEach(f => map[f] = -1);
+  /* encabezado en dos filas (p. ej. «Año» o «SIAF» debajo o encima de la fila principal): se usa solo si esa fila no trae importes */
+  const filaHdr = r => { const w = rows[r]; if (!w || r < 0 || r === hdr) return false; const big = w.some(v => typeof v === 'number' ? Math.abs(v) >= 100 : /^-?\d[\d.,]{2,}$/.test(String(v ?? '').trim())); return !big && w.some(esHdr); };
+  const HR = hdr >= 0 ? [hdr, ...[hdr + 1, hdr - 1].filter(filaHdr)] : [];
+  for (const r of HR) (rows[r] || []).forEach((v, i) => { const x = anH(v); if (!x) return; for (const f of F) if (map[f] < 0 && !Object.values(map).includes(i) && anHdrOk(anCdef(k, f), x)) { map[f] = i; break; } });
+  const H = []; HR.forEach(r => (rows[r] || []).forEach((v, i) => { const x = String(v ?? '').trim(); if (x) H[i] = H[i] ? H[i] + ' ' + x : x; }));
+  const ini = hdr + 1 + (HR.includes(hdr + 1) ? 1 : 0), data = rows.slice(ini, ini + 300), usado = i => Object.values(map).includes(i), col = i => data.map(w => w?.[i]);
+  const sv = S.sanMap?.[k]; if (sv) for (const f in sv) { if (!F.includes(f) || map[f] >= 0) continue; const v = sv[f]; const i = typeof v === 'number' ? v : H.findIndex(x => anH(x) === v); if (i >= 0 && !usado(i) && anCheck(f, col(i)).lvl !== 'err') map[f] = i; }
+  const ref = AN_REF[k] || {}; for (const f in ref) if (F.includes(f) && map[f] < 0 && !usado(ref[f]) && anCheck(f, col(ref[f])).lvl === 'ok') map[f] = ref[f];
+  /* año sin encabezado reconocible: columna cuyos valores son años (no fechas) */
+  if (map.anio < 0) { const n = Math.max(0, ...data.map(w => (w || []).length)); for (let i = 0; i < n; i++) if (!usado(i) && anCheck('anio', col(i)).lvl === 'ok' && !col(i).some(anEsFecha)) { map.anio = i; break; } }
+  return { hdr, map, sc: best.sc, H, ini }; }
+function anValidar(I) { const rows = I.sheets[I.si].rows, ini = I.ini ?? I.hdr + 1, data = rows.slice(ini, ini + 300), out = {}, glob = [];
   for (const f in I.map) if (!anCampos(I.k).some(c => c[0] === f)) I.map[f] = -1;
   for (const [f, , req] of anCampos(I.k)) { const i = I.map[f]; out[f] = i < 0 ? (req ? { lvl: 'err', txt: 'Campo obligatorio: seleccione la columna' } : { lvl: 'off', txt: 'No se usará' }) : anCheck(f, data.map(w => w?.[i])); }
   const por = {}; for (const f in I.map) if (I.map[f] >= 0) (por[I.map[f]] = por[I.map[f]] || []).push(f);
@@ -5243,23 +5248,25 @@ function anValidar(I) { const rows = I.sheets[I.si].rows, data = rows.slice(I.hd
     const okFecha = F.length === 2 && F.includes('anio') && F.includes('mes') && fechas.length && fechas.filter(anEsFecha).length / fechas.length >= .95;
     if (!okFecha) { F.forEach(f => out[f] = { lvl: 'err', txt: `La columna ${anCol(+c)} también está asignada a ${F.filter(x => x !== f).map(x => anCdef(I.k, x)[1]).join(', ')}` }); glob.push(`La columna ${anCol(+c)} está asignada a ${F.map(x => anCdef(I.k, x)[1]).join(' y ')}: cada campo debe tener su propia columna.`); }
     else F.forEach(f => out[f] = { lvl: 'ok', txt: `Columna de fechas verificada: ${f === 'anio' ? 'se toma el año' : 'se toma el mes'}` }); }
-  if (I.map.oc < 0) glob.push(I.k === 'clarisa' ? 'Sin columna Nro. Docum. Compromiso: todos los registros se buscarán como notas contables (año, mes y cuenta), con revisión.' : 'Sin columna de O/C: todos los registros se buscarán como notas contables (año, mes y cuenta), con revisión.');
-  if (I.map.mes < 0) glob.push('Sin columna de mes: no se podrá comparar el mes ni conciliar notas contables.');
+  if (I.map.oc < 0) glob.push(I.k === 'clarisa' ? 'Sin columna Nro. Docum. Compromiso: los registros se buscarán como notas contables (año y cuenta) y quedarán pendientes de revisión.' : 'Sin columna de O/C: todos los registros se buscarán como notas contables (año, mes y cuenta), con revisión.');
+  if (anCampos(I.k).some(c => c[0] === 'mes') && I.map.mes < 0) glob.push('Sin columna de mes: no se podrá comparar el mes ni conciliar notas contables.');
   const err = Object.values(out).some(x => x.lvl === 'err'); return { out, glob, err }; }
 /* Lee las filas con la equivalencia validada; conserva la fila original y registra los errores */
 function anLeerFilas(I) { const rows = I.sheets[I.si].rows, M = I.map, filas = [], errores = [], en = S.cfg.entidad || {};
-  { const Hh = I.hdr >= 0 ? rows[I.hdr] || [] : []; I.ctaSub = M.cta >= 0 && /SUBCTA|SUB CTA/.test(anH(Hh[M.cta]) + ' ' + anH(Hh[M.cta + 1])); } /* «Cuenta SubCta1 SubCta2 SubCta3»: se compone 1503 + subcuentas */
+  { const Hh = I.H || (I.hdr >= 0 ? rows[I.hdr] || [] : []); I.ctaSub = M.cta >= 0 && /SUBCTA|SUB CTA/.test(anH(Hh[M.cta]) + ' ' + anH(Hh[M.cta + 1])); } /* «Cuenta SubCta1 SubCta2 SubCta3»: se compone 1503 + subcuentas */
   const entOk = v => { const t = anH(v); if (!t) return true; const ue = String(en.ue || '').replace(/^0+/, ''), ruc = String(en.ruc || ''), nom = anH(en.nombre); const d = t.replace(/\D/g, '').replace(/^0+/, '');
     return (ue && (d === ue || t.includes(' ' + ue) || t.startsWith(ue + ' '))) || (ruc && t.includes(ruc)) || (nom && (t.includes(nom) || nom.includes(t))) || (!ue && !ruc && !nom); };
   const val = (w, f) => M[f] >= 0 ? w[M[f]] : null;
-  for (let r = I.hdr + 1; r < rows.length; r++) { const w = rows[r] || [], fila = r + 1;
+  let ultCta = '', hayDatos = false; const ctaDe = w => { let c = anCta(val(w, 'cta')); if (I.ctaSub && /^\d{4}$/.test(c)) { const sub = [1, 2, 3].map(d => String(w[M.cta + d] ?? '').trim().replace(/\.0+$/, '')).filter(x => /^\d{1,4}$/.test(x)); if (sub.length) c = c + '.' + sub.map(x => x.padStart(2, '0')).join(''); } return /^\d{4}/.test(c) ? c : ''; };
+  for (let r = I.ini ?? I.hdr + 1; r < rows.length; r++) { const w = rows[r] || [], fila = r + 1;
     const usadas = Object.values(M).filter(i => i >= 0); if (usadas.every(i => w[i] == null || String(w[i]).trim() === '')) continue;
     const txt = w.slice(0, 8).map(anH).join(' '), txtJ = txt.replace(/\s+/g, ''); const anio = anYear(val(w, 'anio'));
-    if (!isFinite(anio)) { if (!/TOTAL|RESUMEN|INFORMACIONAL|SALDO|ACUMULADO/.test(txtJ)) errores.push({ fila, motivo: `Año de registro inválido: «${String(val(w, 'anio') ?? '')}»` }); continue; }
+    const c0 = ctaDe(w); if (c0 && !isFinite(anio)) ultCta = c0; /* filas de cabecera de cuenta: la cuenta se arrastra a sus líneas de detalle */
+    if (!isFinite(anio)) { if (hayDatos && !c0 && !/TOTAL|RESUMEN|INFORMACIONAL|SALDO|ACUMULADO/.test(txtJ)) errores.push({ fila, motivo: `Año de registro inválido: «${String(val(w, 'anio') ?? '')}»` }); continue; }
     const imp = anNum(val(w, 'imp')); if (!isFinite(imp)) { errores.push({ fila, motivo: `Importe inválido: «${String(val(w, 'imp') ?? '')}»` }); continue; }
     if (M.ent >= 0 && !entOk(val(w, 'ent'))) { errores.push({ fila, motivo: `Otra entidad: «${String(val(w, 'ent'))}» (no se incluye)` }); continue; }
     const mes = M.mes >= 0 ? anMes(val(w, 'mes')) : NaN; if (M.mes >= 0 && !isFinite(mes)) errores.push({ fila, motivo: `Mes inválido: «${String(val(w, 'mes') ?? '')}» (la fila se incluye sin mes)`, aviso: true });
-    let cta = anCta(val(w, 'cta')); if (I.ctaSub && /^\d{4}$/.test(cta)) { const sub = [1, 2, 3].map(d => String(w[M.cta + d] ?? '').trim().replace(/\.0+$/, '')).filter(x => /^\d{1,4}$/.test(x)); if (sub.length) cta = cta + '.' + sub.map(x => x.padStart(2, '0')).join(''); } if (!cta) errores.push({ fila, motivo: 'Fila sin cuenta contable (se incluye para el cruce por O/C)', aviso: true });
+    hayDatos = true; let cta = ctaDe(w); if (cta) ultCta = cta; else if (ultCta) cta = ultCta; if (!cta) errores.push({ fila, motivo: 'Fila sin cuenta contable (se incluye para el cruce por O/C)', aviso: true });
     const ocRaw = M.oc >= 0 ? String(val(w, 'oc') ?? '').trim() : '', oc = anOC(ocRaw, true);
     if (oc?.y && oc.y !== anio) errores.push({ fila, motivo: `La O/C «${ocRaw}» indica el año ${oc.y} y la fila es del ${anio}: se usa el año de registro`, aviso: true });
     const siaf = M.siaf >= 0 ? String(val(w, 'siaf') ?? '').split(/[\/;,|]+/).map(x => x.trim().replace(/\.0+$/, '')).filter(Boolean) : [];
@@ -5314,19 +5321,19 @@ function anConciliar(k) { const D = S.sanSrcData?.[k]; if (!D) return []; const 
   /* 2) Notas contables sin O/C: año + mes + cuenta, con evidencia documental */
   const toks = s => new Set(anH(s).split(' ').filter(w => w.length >= 4 && !/^\d+$/.test(w)));
   const notas = D.filas.filter(f => !f.ocN), pend = [];
-  for (const f of notas) { const C = B.filter(x => !usados.has(x.b) && x.y === f.anio && f.mes != null && x.m === f.mes && f.cta && x.cta === f.cta);
+  for (const f of notas) { const C = B.filter(x => !usados.has(x.b) && x.y === f.anio && (f.mes == null || x.m === f.mes) && f.cta && x.cta === f.cta); /* sin mes en el reporte: candidatos por año y cuenta, siempre a revisión */
     const evid = x => { const ds = toks(f.desc + ' ' + f.doc), dn = toks(x.b.den), com = [...ds].filter(w => dn.has(w)).length; const codIn = (f.desc + ' ' + f.doc).includes(x.b.cod);
       const docEq = f.doc && x.b.doc && anH(f.doc).replace(/\s/g, '') === anH(x.b.doc).replace(/\s/g, ''); return codIn ? 'código patrimonial citado' : docEq ? 'mismo documento' : com >= 2 ? `descripción coincidente (${com} términos)` : ''; };
     const E = C.filter(x => x.v === anC2(f.imp) && evid(x));
     const base = { sentido: `${T} (nota sin O/C) → Registro patrimonial`, anio: f.anio, mesC: f.mes, oc: f.ocRaw || '', ocP: '', ocN: '', ctaC: f.cta, impC: f.imp, siaf: f.siaf, filas: [f.fila], corr: [], obs: [] };
-    if (E.length === 1 && C.filter(x => x.v === anC2(f.imp)).length === 1) { const x = E[0]; usados.add(x.b);
+    if (f.mes != null && E.length === 1 && C.filter(x => x.v === anC2(f.imp)).length === 1) { const x = E[0]; usados.add(x.b);
       push({ ...base, estado: 'NOTA_OK', mesP: String(x.m), ocP: x.b.doc || '', bienes: [x.b.cod], ctaP: x.cta, impP: x.v / 100, dif: 0, sustento: `Nota contable sin O/C: único bien del ${f.anio}, mes ${f.mes}, cuenta ${f.cta}, con el mismo importe y ${evid(x)}${f.siaf.length ? '; expediente ' + f.siaf.join(' / ') : ''}.` }); }
     else pend.push({ f, C, base }); }
   for (const { f, C, base } of pend) { const L = C.filter(x => !usados.has(x.b)), igual = L.filter(x => x.v === anC2(f.imp)), tot = L.reduce((a, x) => a + x.v, 0);
-    if (!L.length) push({ ...base, estado: 'SIN_PATRIMONIO', mesP: '', bienes: [], ctaP: '', impP: null, dif: null, sustento: f.mes == null ? `Registro sin O/C y sin mes: no se puede buscar por año, mes y cuenta.` : `Registro sin O/C: no hay bienes del ${f.anio}, mes ${f.mes}, cuenta ${f.cta || '(sin cuenta)'} disponibles en el Registro patrimonial.` });
-    else push({ ...base, estado: 'PENDIENTE', mesP: String(f.mes), bienes: (igual.length ? igual : L).slice(0, 30).map(x => x.b.cod), ctaP: f.cta, impP: igual.length === 1 ? igual[0].v / 100 : tot / 100, dif: igual.length === 1 ? 0 : (anC2(f.imp) - tot) / 100,
-      obs: [igual.length === 1 ? 'Un bien coincide en año, mes, cuenta e importe, pero sin evidencia documental (documento, descripción o código): la coincidencia de cuenta no acredita la conciliación.' : `${L.length} bien(es) candidatos del mismo año, mes y cuenta${igual.length > 1 ? `; ${igual.length} con el mismo importe` : ''}${tot === anC2(f.imp) && L.length > 1 ? '; el total de los candidatos coincide, pero no se agrupa solo por importes' : ''}.`],
-      sustento: `Nota contable sin O/C del ${f.anio}, mes ${f.mes}, cuenta ${f.cta}: requiere revisión; no se realizan correcciones automáticas.` }); }
+    if (!L.length) push({ ...base, estado: 'SIN_PATRIMONIO', mesP: '', bienes: [], ctaP: '', impP: null, dif: null, sustento: `Registro sin O/C: no hay bienes del ${f.anio}${f.mes != null ? ', mes ' + f.mes : ''}, cuenta ${f.cta || '(sin cuenta)'} disponibles en el Registro patrimonial.` });
+    else push({ ...base, estado: 'PENDIENTE', mesP: f.mes != null ? String(f.mes) : '', bienes: (igual.length ? igual : L).slice(0, 30).map(x => x.b.cod), ctaP: f.cta, impP: igual.length === 1 ? igual[0].v / 100 : tot / 100, dif: igual.length === 1 ? 0 : (anC2(f.imp) - tot) / 100,
+      obs: [igual.length === 1 ? `Un bien coincide en año${f.mes != null ? ', mes' : ''}, cuenta e importe, pero sin evidencia documental${f.mes == null ? ' ni mes de registro' : ''}: la coincidencia de cuenta no acredita la conciliación.` : `${L.length} bien(es) candidatos del mismo año${f.mes != null ? ', mes' : ''} y cuenta${igual.length > 1 ? `; ${igual.length} con el mismo importe` : ''}${tot === anC2(f.imp) && L.length > 1 ? '; el total de los candidatos coincide, pero no se agrupa solo por importes' : ''}.`],
+      sustento: `Registro sin O/C del ${f.anio}${f.mes != null ? ', mes ' + f.mes : ''}, cuenta ${f.cta}: requiere revisión; no se realizan correcciones automáticas.` }); }
   /* 3) Del Registro patrimonial hacia el reporte: bienes sin coincidencia */
   const sinC = new Map(); B.forEach(x => { if (usados.has(x.b)) return; if (x.oc && isFinite(x.y)) { const kk = x.y + '|' + x.oc.n; (sinC.get(kk) || sinC.set(kk, []).get(kk)).push(x); }
     else push({ sentido: `Registro patrimonial → ${T}`, estado: 'SIN_OC', anio: isFinite(x.y) ? x.y : '', mesC: '', mesP: x.m ?? '', oc: '', ocP: x.b.doc || '', ocN: '', bienes: [x.b.cod], ctaC: '', ctaP: x.cta, impC: null, impP: x.v / 100, dif: null, siaf: [], filas: [], corr: [], obs: [], sustento: `El documento de adquisición «${x.b.doc || 'vacío'}» no es una orden de compra; ${notas.length ? 'no se identificó una nota contable con evidencia suficiente' : 'no hay notas contables para buscar'}.` }); });
@@ -5354,28 +5361,28 @@ async function anSrcLeer(k, f) { const T = anT(k);
   try { toast(`Leyendo reporte ${T}: ${f.name}…`, 'info'); const sheets = (await IMP.readFile(f)).filter(s => (s.rows || []).length);
     if (!sheets.length) throw new Error('El archivo no tiene datos.');
     let si = 0, det = null; sheets.forEach((s, i) => { const d = anDetect(s.rows, k); const sc = d.sc + Object.values(d.map).filter(x => x >= 0).length; if (!det || sc > det.score) { det = { ...d, score: sc }; si = i; } });
-    const I = { k, nombre: f.name, size: f.size, sheets, si, hdr: det.hdr, map: det.map, rec: true, hash: anHash(sheets.map(s => s.rows)) };
+    const I = { k, nombre: f.name, size: f.size, sheets, si, hdr: det.hdr, map: det.map, H: det.H, ini: det.ini, rec: true, hash: anHash(sheets.map(s => s.rows)) };
     VIEWS.analisis.imp = I;
     const prev = S.sanSrcData?.[k]; if (prev && prev.hash === I.hash) return modal(`Reporte ${T} ya cargado`, `<p>El archivo <b>${h(f.name)}</b> es el mismo que se cargó el ${fmtD(prev.fecha.slice(0, 10))} (${fmtI(prev.filas.length)} filas). No se duplican registros.</p><p class="muted">Puede volver a ejecutar el cruce con los datos actuales del inventario valorizado y de la tabla UIT.</p>`,
       `<button class="mini ghost" data-a="anImpCancel">${ic('x')}Cancelar</button><button class="mini" data-a="anReconc" data-k="${k}">${ic('refresh-cw')}Volver a conciliar</button>`, { tone: 'info', icon: 'copy' });
     anMapModal(); } catch (e) { console.error(e); toast(e.message, 'bad', 8000); } }
-function anMapModal() { const I = VIEWS.analisis.imp; if (!I) return; const T = anT(I.k), rows = I.sheets[I.si].rows, H = I.hdr >= 0 ? rows[I.hdr] || [] : [], v = anValidar(I);
-  const ncol = Math.min(80, Math.max(H.length, ...rows.slice(I.hdr + 1, I.hdr + 50).map(w => (w || []).length)));
+function anMapModal() { const I = VIEWS.analisis.imp; if (!I) return; const T = anT(I.k), rows = I.sheets[I.si].rows, H = I.H || (I.hdr >= 0 ? rows[I.hdr] || [] : []), ini = I.ini ?? I.hdr + 1, v = anValidar(I);
+  const ncol = Math.min(80, Math.max(H.length, ...rows.slice(ini, ini + 50).map(w => (w || []).length)));
   const opts = sel => `<option value="-1">— No usar —</option>` + Array.from({ length: ncol }, (_, i) => `<option value="${i}" ${sel === i ? 'selected' : ''}>${anCol(i)} · ${h(String(H[i] ?? '').trim().slice(0, 34) || '(sin encabezado)')}</option>`).join('');
-  const muestra = i => i < 0 ? '' : rows.slice(I.hdr + 1).filter(w => w && w[i] != null && String(w[i]).trim() !== '').slice(0, 3).map(w => h(String(w[i]).slice(0, 18))).join(' · ');
+  const muestra = i => i < 0 ? '' : rows.slice(ini).filter(w => w && w[i] != null && String(w[i]).trim() !== '').slice(0, 3).map(w => h(String(w[i]).slice(0, 18))).join(' · ');
   const col = { ok: '--ok', warn: '--warn', err: '--bad', off: '--muted' }, ref = AN_REF[I.k] || {};
   modal(`Importar reporte ${T} · validar columnas`, `<div class="anmap">
-    <p>Archivo <b>${h(I.nombre)}</b>${I.sheets.length > 1 ? ` · hoja <select class="anm-sel" data-anm="si">${I.sheets.map((s, i) => `<option value="${i}" ${i === I.si ? 'selected' : ''}>${h(s.name || 'Hoja ' + (i + 1))}</option>`).join('')}</select>` : ''} · fila de encabezados <input class="anm-in" data-anm="hdr" type="number" min="0" value="${I.hdr + 1}" title="0 = sin encabezados"> · ${fmtI(Math.max(0, rows.length - I.hdr - 1))} filas de datos</p>
+    <p>Archivo <b>${h(I.nombre)}</b>${I.sheets.length > 1 ? ` · hoja <select class="anm-sel" data-anm="si">${I.sheets.map((s, i) => `<option value="${i}" ${i === I.si ? 'selected' : ''}>${h(s.name || 'Hoja ' + (i + 1))}</option>`).join('')}</select>` : ''} · fila de encabezados <input class="anm-in" data-anm="hdr" type="number" min="0" value="${I.hdr + 1}" title="0 = sin encabezados"> · ${fmtI(Math.max(0, rows.length - ini))} filas de datos</p>
     <div class="tbl-wrap"><table class="anm-t"><thead><tr><th>Campo</th><th>Columna del archivo</th><th>Muestra</th><th>Validación</th></tr></thead><tbody>
-    ${anCampos(I.k).map(([f, t, req]) => `<tr><td><b>${h(t)}</b>${req ? ' <span class="req">*</span>' : ''}${ref[f] != null ? `<div class="muted">Referencia inicial: columna ${anCol(ref[f])}</div>` : ''}</td><td><select class="anm-sel" data-anm="${f}">${opts(I.map[f])}</select></td><td class="muted">${muestra(I.map[f])}</td><td><span class="badge" style="--k:var(${col[v.out[f].lvl]})">${h(v.out[f].txt)}</span></td></tr>`).join('')}</tbody></table></div>
+    ${anCampos(I.k).map(([f, t, req]) => `<tr><td><b>${h(t)}</b>${req ? ' <span class="req">*</span>' : ''}${ref[f] != null && (I.map[f] < 0 || I.map[f] === ref[f]) ? `<div class="muted">Referencia inicial: columna ${anCol(ref[f])}</div>` : ''}</td><td><select class="anm-sel" data-anm="${f}">${opts(I.map[f])}</select></td><td class="muted">${muestra(I.map[f])}</td><td><span class="badge" style="--k:var(${col[v.out[f].lvl]})">${h(v.out[f].txt)}</span></td></tr>`).join('')}</tbody></table></div>
     ${v.glob.length ? `<div class="alert" style="--k:var(${v.err ? '--bad' : '--warn'});margin-top:10px">${ic('info')}<div>${v.glob.map(h).join('<br>')}</div></div>` : ''}
     <label class="anm-rec"><input type="checkbox" data-anm="rec" ${I.rec ? 'checked' : ''}> Recordar esta equivalencia para el reporte ${h(T)}</label>
     <p class="muted" style="margin:6px 0 0">Se conserva la fila original de cada registro. Una carga nueva reemplaza la anterior de ${h(T)}; no modifica el inventario de los usuarios.</p></div>`,
     `<button class="mini ghost" data-a="anImpCancel">${ic('x')}Cancelar</button><button class="mini" data-a="anImpOk" ${v.err ? 'disabled title="Corrija la equivalencia de columnas"' : ''}>${ic('check')}Procesar y conciliar</button>`, { icon: 'upload' });
   const body = $('#modal .m-body'); body.onchange = e => { const t = e.target.closest('[data-anm]'); if (!t) return; const a = t.dataset.anm;
     if (a === 'rec') { I.rec = t.checked; return; }
-    if (a === 'si') { I.si = +t.value; const d = anDetect(I.sheets[I.si].rows, I.k); I.hdr = d.hdr; I.map = d.map; }
-    else if (a === 'hdr') { const d = anDetect(I.sheets[I.si].rows, I.k, Math.max(0, +t.value || 0) - 1); I.hdr = d.hdr >= 0 ? d.hdr : Math.max(0, +t.value || 0) - 1; I.map = d.map; }
+    if (a === 'si') { I.si = +t.value; const d = anDetect(I.sheets[I.si].rows, I.k); Object.assign(I, { hdr: d.hdr, map: d.map, H: d.H, ini: d.ini }); }
+    else if (a === 'hdr') { const hf = Math.max(0, +t.value || 0) - 1, d = anDetect(I.sheets[I.si].rows, I.k, hf); Object.assign(I, { hdr: d.hdr >= 0 ? d.hdr : hf, map: d.map, H: d.H, ini: d.hdr >= 0 ? d.ini : hf + 1 }); }
     else I.map[a] = +t.value; anMapModal(); }; }
 /* ---- Matriz de resultados ---- */
 const anEstBadge = e => `<span class="badge" style="--k:var(${(AN_EST[e] || [])[1] || '--muted'})">${h((AN_EST[e] || [e])[0])}</span>`;
