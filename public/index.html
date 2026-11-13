@@ -187,7 +187,12 @@ h1,h2,h3{margin:0}
 /* Tablas */
 .tbl-bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
 .an-src{display:flex;gap:10px;margin-left:auto;flex-wrap:wrap}
-.an-sg{display:inline-flex;gap:6px;align-items:center}.an-sg .mini{margin-left:0}.an-del[disabled]{opacity:.45;cursor:not-allowed}
+.an-sg{display:inline-flex;gap:6px;align-items:center}
+.anmap p{margin:0 0 10px}.anm-sel{font:inherit;font-size:12.5px;padding:6px 8px;border:1px solid var(--line-2);border-radius:9px;background:var(--card,#fff);color:inherit;max-width:280px}.anm-in{width:64px;font:inherit;padding:5px 7px;border:1px solid var(--line-2);border-radius:8px}
+.anm-t{width:100%;border-collapse:collapse;font-size:12.5px}.anm-t th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--muted);padding:7px 8px;border-bottom:1px solid var(--line-2)}.anm-t td{padding:7px 8px;border-bottom:1px solid var(--line);vertical-align:middle}.anm-t .req{color:var(--bad)}.anm-rec{display:flex;gap:8px;align-items:center;margin-top:12px;font-size:13px}
+#modal .m-card:has(.anmap){width:min(980px,96vw)}
+.an-eb{display:flex;flex-direction:column;gap:2px;margin:2px 0}.an-eb small{font-size:9.5px;color:var(--muted);text-transform:uppercase;letter-spacing:.04em}.an-est{min-width:150px}
+.an-tabs{display:flex;gap:8px;margin-bottom:10px}.an-sus{min-width:420px;max-width:600px;white-space:normal;font-size:12px;line-height:1.35}.an-err{margin-top:12px}.an-err summary{cursor:pointer;display:flex;gap:8px;align-items:center;font-weight:600;color:var(--warn)}.an-sg .mini{margin-left:0}.an-del[disabled]{opacity:.45;cursor:not-allowed}
 .tbl-bar .input{flex:1;min-width:200px;max-width:420px}
 .tbl-wrap{overflow:auto;border-radius:12px;border:1px solid var(--line);max-height:560px;background:#fff}
 table{width:100%;border-collapse:collapse;font-size:12.5px}
@@ -5133,89 +5138,308 @@ function autoCorrForce() { const a = S.cfg.autoCorr; S.cfg.autoCorr = true; cons
 function an1503Rows() { let n = 0; return S.inv.filter(b => b && !ENG.sinCodigo(b.cod)).map(b => { const a = b.an || {}, pc = String(b.cta || '');
   /* del inventario valorizado se registra solo hasta REGISTRO PATRIMONIAL (valor y cuenta); lo demás lo completa el analista */
   return { b, n: ++n, pv: +b.valor || 0, pc, cv: a.cv != null && a.cv !== '' ? +a.cv : '', cc: a.cc || '', corr: a.corr || '', siaf: a.siaf || '' }; }); }
-/* ---- Análisis 1503: importación de reportes contables (CLARISA y SIAF Landing) ----
-   Cada reporte se lee (Excel o TXT), se reconocen las columnas por su encabezado y se cruza por código patrimonial con el
-   inventario valorizado del saneamiento. Llena REGISTRO CONTABLE (valor y cuenta) y SIAF. No toca el inventario de los usuarios. */
+/* ---- Análisis 1503: conciliación de los reportes CLARISA y SIAF Landing con el Registro patrimonial ----
+   1) Importación: Excel o TXT. Las columnas se reconocen por su encabezado; para CLARISA se usan además las referencias
+      iniciales T = DOC. COMPROMISO (O/C), E = cuenta, G = año, H = expediente SIAF (el mes se busca por su encabezado).
+      Antes de procesar se valida el contenido de cada columna y nunca se acepta una misma columna para dos campos
+      (salvo año y mes tomados de una columna de fechas, verificada). Se conserva la fila original y se informan los errores.
+      Una carga nueva reemplaza la anterior del mismo reporte; el mismo archivo no se duplica.
+   2) Cruce en ambos sentidos con clave entidad + año de registro + N° de O/C normalizado (nunca entre años distintos).
+      Mes, cuenta e importe se comparan dentro de cada coincidencia.
+   3) Importes en céntimos (2 decimales). Un registro contable puede corresponder a varios bienes; si la O/C tiene varias
+      partidas se agrupa por mes y cuenta, nunca solo porque los importes sumen igual. Cada bien se usa una sola vez.
+   4) Notas sin O/C: candidatos por año, mes y cuenta; se concilia solo con evidencia documental y un único candidato.
+   5) Corrección: la cuenta del Registro patrimonial es la referencia, previa validación de clase y umbral (tabla UIT
+      configurable). Si no se puede validar, queda pendiente.
+   6) SIAF: expedientes de las operaciones conciliadas.
+   7) Estado separado por bien y matriz con trazabilidad hasta la fila y el archivo de origen.                     */
 const AN_SRC = [['clarisa', 'CLARISA', 'file-spreadsheet', '--c-cfg'], ['siaf', 'SIAF Landing', 'landmark', '--c-san']];
+const AN_REF = { clarisa: { oc: 19, cta: 4, anio: 6, siaf: 7 } }; /* referencias iniciales del Excel CLARISA: T, E, G, H */
+const AN_CAMPOS = [
+  ['oc', 'N° de orden de compra (DOC. COMPROMISO)', false, /DOC\w* COMPROMISO|ORDEN (DE )?COMPRA|^O C\b|^OC\b|^N\w* O C\b|NRO ORDEN|^COMPROMISO\b/, /SERVICIO/],
+  ['anio', 'Año de registro', true, /^ANO\b|^ANIO\b|EJERCICIO|^PERIODO ANO|ANO (DE )?REG|ANO EJE|ANO CONTAB/, /MES/],
+  ['mes', 'Mes de registro', false, /^MES\b|MES (DE )?REG|MES CONTAB|MES EJE|^PERIODO MES/, null],
+  ['cta', 'Cuenta contable', true, /CUENTA|^CTA\b|^MAYOR\b|CLASIF\w* CONTAB/, /DESCRIP|NOMBRE|DENOMINA|BANCARIA|CORRIENTE/],
+  ['imp', 'Importe', true, /IMPORTE|MONTO|VALOR|SALDO|^DEBE\b|^TOTAL\b/, /DEPREC|RESIDUAL|NETO|UNIT|HABER/],
+  ['siaf', 'Expediente SIAF', false, /EXPEDIENTE|SIAF|^EXP\b|NRO EXP|^N\w* EXP/, null],
+  ['doc', 'Documento / tipo de documento', false, /^TIPO DOC|^DOCUMENTO|^DOC\b|COMPROBANTE|^NRO DOC|^N\w* DOC/, /COMPROMISO/],
+  ['desc', 'Descripción / glosa', false, /GLOSA|DESCRIP|CONCEPTO|DETALLE|DENOMINA|NOTA/, null],
+  ['ent', 'Entidad / unidad ejecutora', false, /ENTIDAD|UNIDAD EJEC|^UE\b|SEC\w* EJEC|^RUC\b|^EJECUTORA/, null]
+];
+const AN_C = Object.fromEntries(AN_CAMPOS.map(c => [c[0], c]));
+const AN_EST = {
+  CONCILIADO: ['Conciliado', '--ok'], CONC_CORR: ['Conciliado · corrección propuesta', '--ok'], CONC_PEND: ['Conciliado · corrección pendiente', '--warn'],
+  NOTA_OK: ['Conciliado por nota contable', '--ok'], DIF_IMPORTE: ['Diferencia de importe', '--bad'], DIF_MES: ['Diferencia de mes', '--warn'],
+  AMBIGUO: ['Agrupación ambigua', '--warn'], PENDIENTE: ['Pendiente de revisión', '--warn'], SIN_PATRIMONIO: ['Sin bien en el Registro patrimonial', '--bad'],
+  SIN_CONTABLE: ['O/C no figura en el reporte (mismo año)', '--muted'], SIN_OC: ['Bien sin orden de compra', '--muted']
+};
+const AN_OK = new Set(['CONCILIADO', 'CONC_CORR', 'CONC_PEND', 'NOTA_OK']);
+const anT = k => (AN_SRC.find(x => x[0] === k) || [])[1] || k;
 const sanArr = () => SAN_ON ? S.inv : (Array.isArray(S.sanInv) ? S.sanInv : (S.sanInv = []));
+const anNN = x => String(x ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+const anH = x => anNN(x).replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
+const anHdrOk = (c, x) => c[3].test(x) && !(c[4] && c[4].test(x));
+const anCol = i => { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
 const anCod = v => String(v ?? '').replace(/\.0+$/, '').replace(/\D/g, '');
 const anCta = v => { let c = String(v ?? '').trim().replace(/\s+/g, ''); if (/^\d{6,}$/.test(c)) c = c.slice(0, 4) + '.' + c.slice(4); return c.toUpperCase(); };
-const anNum = v => { if (typeof v === 'number') return v; let t = String(v ?? '').trim().replace(/[S\/\s]/g, ''); if (!t) return NaN; if (/^-?[\d.]+,\d{1,2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.'); else t = t.replace(/,/g, ''); if (/^\(.*\)$/.test(t)) t = '-' + t.slice(1, -1); return parseFloat(t); };
-function anSrcParse(sheets) {
-  const N = x => ENG.norm(String(x ?? '')).toUpperCase().replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
-  for (const sh of sheets) { const rows = sh.rows || [];
-    for (let r = 0; r < Math.min(rows.length, 40); r++) { const H = (rows[r] || []).map(N); let cod = -1, val = -1, cta = -1, siaf = -1;
-      H.forEach((x, i) => {
-        if (cod < 0 && /^(COD|CODIGO)( (PATRIMONIAL|ACTIVO|DEL BIEN|BIEN|SBN|PATRIM))?$|CODIGO PATRIMONIAL|CODIGO ACTIVO|COD PATRIMONIAL/.test(x)) cod = i;
-        else if (siaf < 0 && /SIAF|EXPEDIENTE|^EXP\b|N REGISTRO|NRO REGISTRO|REGISTRO SIAF/.test(x)) siaf = i;
-        else if (cta < 0 && /CUENTA|^CTA\b|MAYOR|CLASIFICADOR CONTABLE/.test(x) && !/DESCRIP|NOMBRE|DENOMINA/.test(x)) cta = i;
-        else if (/VALOR|IMPORTE|MONTO|SALDO|COSTO/.test(x) && !/RESIDUAL|DEPRECIA|NETO|NUM|DESCRIP/.test(x) && (val < 0 || /CONTABLE|ADQUISICION|LIBROS/.test(x))) val = i; });
-      if (cod < 0 || (val < 0 && cta < 0 && siaf < 0)) continue;
-      const M = new Map(); let filas = 0;
-      for (let k = r + 1; k < rows.length; k++) { const w = rows[k] || [], c = anCod(w[cod]); if (c.length < 6) continue; filas++;
-        const o = M.get(c) || { cv: 0, hayV: false, cc: '', siaf: [] };
-        if (val >= 0) { const v = anNum(w[val]); if (isFinite(v)) { o.cv += v; o.hayV = true; } }
-        if (cta >= 0 && String(w[cta] ?? '').trim()) o.cc = anCta(w[cta]);
-        if (siaf >= 0) { const t = String(w[siaf] ?? '').replace(/\.0+$/, '').trim(); if (t && !o.siaf.includes(t)) o.siaf.push(t); }
-        M.set(c, o); }
-      if (M.size) return { M, filas, hoja: sh.name, cols: { val: val >= 0, cta: cta >= 0, siaf: siaf >= 0 } }; } }
-  return null; }
-/* campos del análisis que vienen de un reporte (k): se usan para «Eliminar» sin tocar lo escrito a mano ni lo del otro reporte */
-const anSrcCampos = (b, k) => { const a = b?.an; if (!a) return []; if (a.de) return ['cv', 'cc', 'siaf'].filter(f => a.de[f] === k); return a.src === k ? ['cv', 'cc', 'siaf'] : []; };
-const anSrcN = k => sanArr().filter(b => anSrcCampos(b, k).length).length;
-async function anSrcLeer(k, f) { const t = AN_SRC.find(x => x[0] === k)[1];
-  try { toast(`Leyendo reporte ${t}: ${f.name}…`, 'info'); const p = anSrcParse(await IMP.readFile(f));
-    if (!p) throw new Error(`No se reconoció el reporte ${t}. Debe tener una columna de CÓDIGO PATRIMONIAL y al menos una de VALOR, CUENTA o SIAF/EXPEDIENTE.`);
-    const inv = sanArr(), idx = new Map(); inv.forEach(b => { const c = anCod(b.cod); if (c) { idx.set(c, b); idx.set(c.padStart(12, '0'), b); } });
-    let ok = 0; const no = []; p.M.forEach((o, c) => { if (idx.get(c) || idx.get(c.padStart(12, '0'))) ok++; else no.push(c); });
-    if (!inv.length) throw new Error('Primero importe el inventario valorizado en Procesar reporte patrimonial.');
-    VIEWS.analisis.srcPend = { k, t, p, nombre: f.name };
-    const cols = [p.cols.val && 'Valor contable', p.cols.cta && 'Cuenta contable', p.cols.siaf && 'SIAF'].filter(Boolean);
-    modal(`Importar reporte ${t}`, `<p>Se leyeron <b>${fmtI(p.filas)}</b> filas (${fmtI(p.M.size)} códigos) de <b>${h(f.name)}</b>${p.hoja ? ` · hoja ${h(p.hoja)}` : ''}.</p>
-      <div class="kpis" style="margin:10px 0"><div class="kpi"><small>Coinciden con el análisis</small><b>${fmtI(ok)}</b></div><div class="kpi"><small>No están en el inventario valorizado</small><b>${fmtI(no.length)}</b></div></div>
-      <div class="alert" style="--k:var(--c-san)">${ic('info')}<div>Se llenarán las columnas <b>${cols.join(', ')}</b> del análisis, cruzando por código patrimonial. Los datos que ya estaban en esas columnas se reemplazan. Solo afecta al Análisis de Saneamiento contable 1503; no modifica el inventario de los usuarios.</div></div>${no.length ? `<p class="muted" style="margin-top:8px">Códigos sin coincidencia (primeros): ${no.slice(0, 8).map(h).join(', ')}${no.length > 8 ? '…' : ''}</p>` : ''}`,
-      `<button class="mini ghost" data-a="anSrcCancelar">${ic('x')}Cancelar</button><button class="mini" data-a="anSrcAceptar" ${ok ? '' : 'disabled'}>${ic('check')}Aceptar</button>`, { tone: 'info', icon: 'upload' });
-  } catch (e) { console.error(e); toast(e.message, 'bad', 8000); } }
+const anNum = v => { if (typeof v === 'number') return v; let t = String(v ?? '').trim().replace(/[S\/\s]/g, ''); if (!t) return NaN; if (/^-?[\d.]+,\d{1,2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.'); else t = t.replace(/,/g, ''); if (/^\(.*\)$/.test(t)) t = '-' + t.slice(1, -1); return /^-?\d+(\.\d+)?$/.test(t) ? parseFloat(t) : NaN; };
+const anC2 = x => Math.round((+x || 0) * 100);
+const anYear = v => { if (v instanceof Date) return v.getFullYear(); const t = String(v ?? '').trim(); let m;
+  if ((m = /^(\d{4})-\d{2}-\d{2}/.exec(t))) return +m[1]; if (/^(19[89]\d|20\d\d|2100)(\.0+)?$/.test(t)) return parseInt(t, 10); if ((m = /^\d{1,2}\/\d{1,2}\/(\d{4})$/.exec(t))) return +m[1]; return NaN; };
+const AN_MESES = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SET', 'OCT', 'NOV', 'DIC'];
+const anMes = v => { if (v instanceof Date) return v.getMonth() + 1; const t = anNN(v).trim(); let m;
+  if ((m = /^\d{4}-(\d{2})-\d{2}/.exec(t))) return +m[1]; if ((m = /^(\d{1,2})(\.0+)?$/.exec(t)) && +m[1] >= 1 && +m[1] <= 12) return +m[1]; if ((m = /^\d{1,2}\/(\d{1,2})\/\d{4}$/.exec(t))) return +m[1];
+  const n = t.replace(/^SEP/, 'SET'); const i = AN_MESES.findIndex(x => n.startsWith(x)); return i >= 0 ? i + 1 : NaN; };
+const anEsFecha = v => v instanceof Date || /^\d{4}-\d{2}-\d{2}|^\d{1,2}\/\d{1,2}\/\d{4}$/.test(String(v ?? '').trim());
+/* N° de orden de compra normalizado (sin prefijos, espacios ni ceros a la izquierda); el texto original se conserva */
+function anOC(raw, comp) { const t0 = String(raw ?? '').trim(); if (!t0) return null; const t = anNN(t0).replace(/[°º]/g, ' ');
+  if (/\bO\s*[\/.]\s*S(?![A-MO-Z])|\bOS(?![A-MO-Z])|ORDEN DE SERVICIO|CONTRATO|PLANILLA/.test(t)) return null;
+  const esOC = /\bO\s*[\/.]\s*C(?![A-MO-Z])|\bOC(?![A-MO-Z])|ORDEN\s+DE\s+COMPRA/.test(t);
+  if (!esOC && !comp) return null; if (!esOC && /[A-Z]/.test(t.replace(/\b(N|NO|NRO|NUM|NUMERO)\b/g, ''))) return null; /* otro documento (boleta, factura, NEA…) */
+  const g = (t.replace(/\b(N|NO|NRO|NUM|NUMERO)\b\.?/g, ' ').match(/\d+/g) || []); if (!g.length) return null;
+  let n = g[0], y = null; if (g.length >= 2) { const yi = g.findIndex(x => /^(19[89]\d|20\d\d)$/.test(x)); if (yi >= 0) { y = +g[yi]; n = g.find((x, i) => i !== yi) || g[yi]; } }
+  n = String(n).replace(/^0+(?=\d)/, ''); if (/^0+$/.test(n)) return null; return { n, y, raw: t0 }; }
+/* Validación del contenido de una columna para un campo */
+function anCheck(f, vals) { const ne = vals.filter(v => v != null && String(v).trim() !== ''); const n = ne.length;
+  if (!n) return { lvl: 'err', txt: 'Columna sin datos' };
+  const r = fn => ne.filter(fn).length / n, pct = x => Math.round(x * 100) + '%';
+  if (f === 'anio') { const p = r(v => isFinite(anYear(v))); return p < .6 ? { lvl: 'err', txt: `Solo ${pct(p)} de los valores son años` } : p < .95 ? { lvl: 'warn', txt: `${pct(p)} son años; las filas sin año válido se informarán como error` } : { lvl: 'ok', txt: 'Años válidos' }; }
+  if (f === 'mes') { const p = r(v => isFinite(anMes(v))); return p < .6 ? { lvl: 'err', txt: `Solo ${pct(p)} de los valores son meses` } : p < .95 ? { lvl: 'warn', txt: `${pct(p)} son meses` } : { lvl: 'ok', txt: 'Meses válidos' }; }
+  if (f === 'siaf') { const yr = r(v => isFinite(anYear(v)) && !anEsFecha(v)), ms = r(v => /^(0?[1-9]|1[0-2])(\.0+)?$/.test(String(v).trim())), num = r(v => /^\d{1,10}(\.0+)?$/.test(String(v).trim().replace(/[\s-]/g, '')));
+    if (yr > .9) return { lvl: 'err', txt: 'El contenido parece AÑO, no expediente SIAF' }; if (ms > .9) return { lvl: 'err', txt: 'El contenido parece MES, no expediente SIAF' };
+    return num < .6 ? { lvl: 'warn', txt: `Solo ${pct(num)} parecen números de expediente` } : { lvl: 'ok', txt: 'Expedientes válidos' }; }
+  if (f === 'cta') { const p = r(v => /^\d{4}(\.?\d{1,8})*$/.test(String(v).trim().replace(/\s+/g, '').replace(/\.0+$/, ''))); return p < .6 ? { lvl: 'err', txt: `Solo ${pct(p)} parecen cuentas contables` } : p < .95 ? { lvl: 'warn', txt: `${pct(p)} son cuentas contables` } : { lvl: 'ok', txt: 'Cuentas válidas' }; }
+  if (f === 'imp') { const p = r(v => isFinite(anNum(v))); return p < .8 ? { lvl: 'err', txt: `Solo ${pct(p)} de los valores son importes` } : p < .97 ? { lvl: 'warn', txt: `${pct(p)} son importes` } : { lvl: 'ok', txt: 'Importes válidos' }; }
+  if (f === 'oc') { const p = r(v => !!anOC(v, true)), yr = r(v => isFinite(anYear(v)) && !anEsFecha(v)); if (yr > .9) return { lvl: 'err', txt: 'El contenido parece AÑO, no número de orden' };
+    const tot = vals.length, con = ne.filter(v => !!anOC(v, true)).length; return { lvl: p < .05 ? 'warn' : 'ok', txt: `${fmtI(con)} de ${fmtI(tot)} filas con N° de O/C; las demás se buscarán como nota contable` }; }
+  return { lvl: 'ok', txt: `${fmtI(n)} valores` }; }
+/* Detecta hoja, fila de encabezados y equivalencia de columnas */
+function anDetect(rows, k, hdrF) {
+  let best = { hdr: -1, sc: 0 };
+  if (hdrF != null && hdrF >= -1) best = { hdr: hdrF, sc: 9 };
+  else for (let r = 0; r < Math.min(rows.length, 40); r++) { let sc = 0; (rows[r] || []).forEach(v => { const x = anH(v); if (x && x.length < 60 && AN_CAMPOS.some(c => anHdrOk(c, x))) sc++; }); if (sc > best.sc) best = { hdr: r, sc }; }
+  const hdr = best.sc >= 2 ? best.hdr : -1, H = hdr >= 0 ? (rows[hdr] || []).map(anH) : [], map = {};
+  AN_CAMPOS.forEach(c => map[c[0]] = -1);
+  const ORD = ['oc', 'mes', 'anio', 'siaf', 'cta', 'imp', 'doc', 'desc', 'ent'];
+  H.forEach((x, i) => { if (!x) return; for (const f of ORD) if (map[f] < 0 && anHdrOk(AN_C[f], x)) { map[f] = i; break; } });
+  const data = rows.slice(hdr + 1, hdr + 301), usado = i => Object.values(map).includes(i);
+  const sv = S.sanMap?.[k]; if (sv) for (const f in sv) { const v = sv[f]; const i = typeof v === 'number' ? v : H.indexOf(v); if (i >= 0 && !usado(i) && anCheck(f, data.map(w => w?.[i])).lvl !== 'err') { map[f] = i; } }
+  const ref = AN_REF[k] || {}; for (const f in ref) if (map[f] < 0 && !usado(ref[f]) && anCheck(f, data.map(w => w?.[ref[f]])).lvl !== 'err') map[f] = ref[f];
+  return { hdr, map, sc: best.sc }; }
+function anValidar(I) { const rows = I.sheets[I.si].rows, data = rows.slice(I.hdr + 1, I.hdr + 301), out = {}, glob = [];
+  for (const [f, , req] of AN_CAMPOS) { const i = I.map[f]; out[f] = i < 0 ? (req ? { lvl: 'err', txt: 'Campo obligatorio: seleccione la columna' } : { lvl: 'off', txt: 'No se usará' }) : anCheck(f, data.map(w => w?.[i])); }
+  const por = {}; for (const f in I.map) if (I.map[f] >= 0) (por[I.map[f]] = por[I.map[f]] || []).push(f);
+  for (const c in por) if (por[c].length > 1) { const F = por[c], fechas = data.map(w => w?.[+c]).filter(v => v != null && v !== '');
+    const okFecha = F.length === 2 && F.includes('anio') && F.includes('mes') && fechas.length && fechas.filter(anEsFecha).length / fechas.length >= .95;
+    if (!okFecha) { F.forEach(f => out[f] = { lvl: 'err', txt: `La columna ${anCol(+c)} también está asignada a ${F.filter(x => x !== f).map(x => AN_C[x][1]).join(', ')}` }); glob.push(`La columna ${anCol(+c)} está asignada a ${F.map(x => AN_C[x][1]).join(' y ')}: cada campo debe tener su propia columna.`); }
+    else F.forEach(f => out[f] = { lvl: 'ok', txt: `Columna de fechas verificada: ${f === 'anio' ? 'se toma el año' : 'se toma el mes'}` }); }
+  if (I.map.oc < 0) glob.push('Sin columna de O/C: todos los registros se buscarán como notas contables (año, mes y cuenta), con revisión.');
+  if (I.map.mes < 0) glob.push('Sin columna de mes: no se podrá comparar el mes ni conciliar notas contables.');
+  const err = Object.values(out).some(x => x.lvl === 'err'); return { out, glob, err }; }
+/* Lee las filas con la equivalencia validada; conserva la fila original y registra los errores */
+function anLeerFilas(I) { const rows = I.sheets[I.si].rows, M = I.map, filas = [], errores = [], en = S.cfg.entidad || {};
+  const entOk = v => { const t = anH(v); if (!t) return true; const ue = String(en.ue || '').replace(/^0+/, ''), ruc = String(en.ruc || ''), nom = anH(en.nombre); const d = t.replace(/\D/g, '').replace(/^0+/, '');
+    return (ue && (d === ue || t.includes(' ' + ue) || t.startsWith(ue + ' '))) || (ruc && t.includes(ruc)) || (nom && (t.includes(nom) || nom.includes(t))) || (!ue && !ruc && !nom); };
+  const val = (w, f) => M[f] >= 0 ? w[M[f]] : null;
+  for (let r = I.hdr + 1; r < rows.length; r++) { const w = rows[r] || [], fila = r + 1;
+    const usadas = Object.values(M).filter(i => i >= 0); if (usadas.every(i => w[i] == null || String(w[i]).trim() === '')) continue;
+    const txt = w.slice(0, 8).map(anH).join(' '); const anio = anYear(val(w, 'anio'));
+    if (!isFinite(anio)) { if (!/TOTAL|SUBTOTAL|RESUMEN/.test(txt)) errores.push({ fila, motivo: `Año de registro inválido: «${String(val(w, 'anio') ?? '')}»` }); continue; }
+    const imp = anNum(val(w, 'imp')); if (!isFinite(imp)) { errores.push({ fila, motivo: `Importe inválido: «${String(val(w, 'imp') ?? '')}»` }); continue; }
+    if (M.ent >= 0 && !entOk(val(w, 'ent'))) { errores.push({ fila, motivo: `Otra entidad: «${String(val(w, 'ent'))}» (no se incluye)` }); continue; }
+    const mes = M.mes >= 0 ? anMes(val(w, 'mes')) : NaN; if (M.mes >= 0 && !isFinite(mes)) errores.push({ fila, motivo: `Mes inválido: «${String(val(w, 'mes') ?? '')}» (la fila se incluye sin mes)`, aviso: true });
+    const cta = anCta(val(w, 'cta')); if (!cta) errores.push({ fila, motivo: 'Fila sin cuenta contable (se incluye para el cruce por O/C)', aviso: true });
+    const ocRaw = M.oc >= 0 ? String(val(w, 'oc') ?? '').trim() : '', oc = anOC(ocRaw, true);
+    if (oc?.y && oc.y !== anio) errores.push({ fila, motivo: `La O/C «${ocRaw}» indica el año ${oc.y} y la fila es del ${anio}: se usa el año de registro`, aviso: true });
+    const siaf = M.siaf >= 0 ? String(val(w, 'siaf') ?? '').split(/[\/;,|]+/).map(x => x.trim().replace(/\.0+$/, '')).filter(Boolean) : [];
+    filas.push({ fila, anio, mes: isFinite(mes) ? mes : null, cta, imp: Math.round(imp * 100) / 100, ocRaw, ocN: oc?.n || '', siaf, doc: String(val(w, 'doc') ?? '').trim(), desc: String(val(w, 'desc') ?? '').trim(), ent: String(val(w, 'ent') ?? '').trim(),
+      raw: w.slice(0, Math.max(30, Math.max(...usadas) + 1)).map(v => v == null ? '' : String(v).slice(0, 120)) }); }
+  return { filas, errores }; }
+const anHash = rows => { let h1 = 0xdeadbeef, h2 = 0x41c6ce57; const s = JSON.stringify(rows); for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); } return ((h2 >>> 0).toString(16) + (h1 >>> 0).toString(16)) + ':' + s.length; };
+/* Validación de la cuenta patrimonial antes de proponerla como corrección */
+function anEvalCta(x, V) { const b = x.b, y = x.y, P = x.cta, uit = S.cfg.uit || {};
+  if (!P) return { ok: false, mot: 'el bien no tiene cuenta patrimonial: corrección pendiente' };
+  if (!ENG.PLANMAP[P]) return { ok: false, mot: `la cuenta patrimonial ${P} no figura en el plan de cuentas configurado: corrección pendiente` };
+  if (!isFinite(y) || uit[y] == null || uit[y] === '') return { ok: false, mot: `la UIT ${isFinite(y) ? y : ''} no está en la tabla configurada: no se puede validar el umbral` };
+  const esp = V.get(b)?.esp, th = ENG.umbral(y, uit), fr = ENG.fraccion(y);
+  if (!esp) return { ok: false, mot: 'sin datos para validar la clasificación (código o fecha): corrección pendiente' };
+  if (esp.motivo === 'CLASE') return { ok: false, mot: `la cuenta patrimonial ${P} no corresponde a la clase del catálogo${esp.cta ? ` (esperada ${esp.cta})` : ''}: corrección pendiente` };
+  if (esp.motivo === 'UMBRAL') return { ok: false, mot: `valor unitario S/ ${fmtN(b.valor)} frente al umbral S/ ${fmtN(th)} (${fr} ${y}): revisar política contable, agrupación o unidad funcional; no se corrige automáticamente` };
+  return { ok: true, mot: `cuenta patrimonial ${P} validada por clase del catálogo y umbral ${fr} ${y} (S/ ${fmtN(th)}; valor unitario S/ ${fmtN(b.valor)})` }; }
+/* Cruce automático (se ejecuta dentro de la data del saneamiento) */
+function anConciliar(k) { const D = S.sanSrcData?.[k]; if (!D) return []; const T = anT(k), V = new Map(VAL().map(x => [x.b, x]));
+  const uniq = a => [...new Set(a.filter(v => v !== '' && v != null))];
+  const B = an1503Rows().map(x => x.b).map(b => ({ b, oc: anOC(b.doc, false), y: ENG.year(b.fecha), m: b.fecha ? +String(b.fecha).slice(5, 7) || null : null, cta: String(b.cta || '').trim(), v: anC2(b.valor) }));
+  const res = [], usados = new Set(); let id = 0; const push = o => { o.id = ++id; res.push(o); return o; };
+  const keyC = new Map(), keyP = new Map(), ocAnios = new Map();
+  D.filas.forEach(f => { if (!f.ocN) return; const kk = f.anio + '|' + f.ocN; (keyC.get(kk) || keyC.set(kk, []).get(kk)).push(f); (ocAnios.get(f.ocN) || ocAnios.set(f.ocN, new Set()).get(f.ocN)).add(f.anio); });
+  B.forEach(x => { if (x.oc && isFinite(x.y)) { const kk = x.y + '|' + x.oc.n; (keyP.get(kk) || keyP.set(kk, []).get(kk)).push(x); } });
+  const otros = (n, y) => { const a = [...(ocAnios.get(n) || [])].filter(z => z !== +y); return a.length ? ` La O/C ${n} figura en ${T} en ${a.join(', ')}: no se relaciona por ser de otro año.` : ''; };
+  const evaluar = (p, X, anio, ocN) => { const sumP = X.reduce((a, x) => a + x.v, 0), dif = p.imp - sumP, mP = uniq(X.map(x => x.m)), ctaDif = X.filter(x => x.cta !== p.cta);
+    const r = { sentido: 'Ambos sentidos (O/C + año)', anio: +anio, mesC: p.mes, mesP: mP.join(', '), oc: uniq([...p.ocRaw]).join(' / '), ocP: uniq(X.map(x => x.b.doc)).join(' / '), ocN, bienes: X.map(x => x.b.cod), ctaC: p.cta, ctaP: uniq(X.map(x => x.cta)).join(' / '), impC: p.imp / 100, impP: sumP / 100, dif: dif / 100, siaf: p.siaf, filas: p.filas, corr: [], obs: [] };
+    if (dif !== 0) { r.estado = 'DIF_IMPORTE'; r.obs.push(`Importe ${T} S/ ${fmtN(p.imp / 100)} y valor patrimonial S/ ${fmtN(sumP / 100)}${X.length > 1 ? ` (suma de ${X.length} bienes)` : ''}: diferencia S/ ${fmtN(dif / 100)}. No se declara conciliado.`); }
+    if (p.mes != null && !(mP.length === 1 && mP[0] === p.mes)) { r.obs.push(`Mes contable ${p.mes} y mes patrimonial ${mP.join(', ') || 'sin fecha'}: no se vincula automáticamente.`); if (!r.estado) r.estado = 'DIF_MES'; }
+    if (!r.estado) { if (!ctaDif.length) r.estado = 'CONCILIADO'; else { let pend = 0;
+      for (const x of ctaDif) { const ev = anEvalCta(x, V); if (ev.ok) r.corr.push({ cod: x.b.cod, de: p.cta, a: x.cta, mot: `Cuenta ${T} ${p.cta || '(vacía)'} distinta de la cuenta del Registro patrimonial; ${ev.mot}.` }); else { pend++; r.obs.push(`${x.b.cod}: cuenta ${T} ${p.cta || '(vacía)'} ≠ patrimonial ${x.cta || '(vacía)'}; ${ev.mot}.`); } }
+      r.estado = pend ? 'CONC_PEND' : 'CONC_CORR'; } }
+    r.sustento = `O/C ${ocN} del ${anio}: ${X.length} bien(es) del Registro patrimonial y ${p.filas.length} fila(s) de ${T} (cuenta ${p.cta || 'sin cuenta'}${p.mes ? ', mes ' + p.mes : ''}). Importes comparados a 2 decimales.`;
+    return push(r); };
+  /* 1) Cruce por O/C + año (de CLARISA hacia el Registro patrimonial y viceversa) */
+  for (const [kk, F] of keyC) { const [anio, ocN] = kk.split('|'), P = (keyP.get(kk) || []).filter(x => !usados.has(x.b));
+    const part = new Map(); F.forEach(f => { const pk = (f.mes ?? '') + '|' + f.cta; const p = part.get(pk) || part.set(pk, { mes: f.mes, cta: f.cta, imp: 0, filas: [], siaf: [], ocRaw: new Set() }).get(pk); p.imp += anC2(f.imp); p.filas.push(f.fila); f.siaf.forEach(s => !p.siaf.includes(s) && p.siaf.push(s)); p.ocRaw.add(f.ocRaw); });
+    const PL = [...part.values()];
+    if (!P.length) { PL.forEach(p => push({ sentido: `${T} → Registro patrimonial`, estado: 'SIN_PATRIMONIO', anio: +anio, mesC: p.mes, mesP: '', oc: [...p.ocRaw].join(' / '), ocP: '', ocN, bienes: [], ctaC: p.cta, ctaP: '', impC: p.imp / 100, impP: null, dif: null, siaf: p.siaf, filas: p.filas, corr: [], obs: [],
+      sustento: `La O/C ${ocN} del ${anio} no tiene bienes con esa orden y año en el Registro patrimonial.` + (() => { const a = B.filter(x => x.oc?.n === ocN && x.y !== +anio).map(x => x.y); return a.length ? ` Hay bienes con O/C ${ocN} de ${uniq(a).join(', ')}: no se relacionan por ser de otro año.` : ''; })() })); continue; }
+    let grupos = null;
+    if (PL.length === 1) grupos = [{ p: PL[0], X: P }];
+    else { const asig = new Map(PL.map(p => [p, []])), amb = [];
+      for (const x of P) { let c = PL.filter(p => p.cta === x.cta && p.mes === x.m); if (c.length !== 1) { const cm = PL.filter(p => p.mes === x.m), cc = PL.filter(p => p.cta === x.cta); c = c.length > 1 ? [] : cm.length === 1 ? cm : cc.length === 1 ? cc : []; } if (c.length === 1) asig.get(c[0]).push(x); else amb.push(x); }
+      if (amb.length || [...asig.values()].some(a => !a.length)) { const sC = PL.reduce((a, p) => a + p.imp, 0), sP = P.reduce((a, x) => a + x.v, 0);
+        push({ sentido: 'Ambos sentidos (O/C + año)', estado: 'AMBIGUO', anio: +anio, mesC: uniq(PL.map(p => p.mes)).join(', '), mesP: uniq(P.map(x => x.m)).join(', '), oc: uniq(PL.flatMap(p => [...p.ocRaw])).join(' / '), ocP: uniq(P.map(x => x.b.doc)).join(' / '), ocN, bienes: P.map(x => x.b.cod), ctaC: uniq(PL.map(p => p.cta)).join(' / '), ctaP: uniq(P.map(x => x.cta)).join(' / '), impC: sC / 100, impP: sP / 100, dif: (sC - sP) / 100, siaf: uniq(PL.flatMap(p => p.siaf)), filas: PL.flatMap(p => p.filas), corr: [],
+          obs: [`La O/C tiene ${PL.length} partidas contables y no se puede determinar por mes, cuenta y documentos qué bienes corresponden a cada una${amb.length ? ` (${amb.length} bien(es) sin partida única)` : ''}${[...asig.values()].some(a => !a.length) ? '; hay partidas sin bienes asignables' : ''}. Revise manualmente; no se agrupa por importes.`],
+          sustento: `O/C ${ocN} del ${anio}: ${P.length} bien(es) y ${PL.length} partidas de ${T}.` }); P.forEach(x => usados.add(x.b)); continue; }
+      grupos = PL.map(p => ({ p, X: asig.get(p) })); }
+    grupos.forEach(({ p, X }) => evaluar(p, X, anio, ocN)); P.forEach(x => usados.add(x.b)); }
+  /* 2) Notas contables sin O/C: año + mes + cuenta, con evidencia documental */
+  const toks = s => new Set(anH(s).split(' ').filter(w => w.length >= 4 && !/^\d+$/.test(w)));
+  const notas = D.filas.filter(f => !f.ocN), pend = [];
+  for (const f of notas) { const C = B.filter(x => !usados.has(x.b) && x.y === f.anio && f.mes != null && x.m === f.mes && f.cta && x.cta === f.cta);
+    const evid = x => { const ds = toks(f.desc + ' ' + f.doc), dn = toks(x.b.den), com = [...ds].filter(w => dn.has(w)).length; const codIn = (f.desc + ' ' + f.doc).includes(x.b.cod);
+      const docEq = f.doc && x.b.doc && anH(f.doc).replace(/\s/g, '') === anH(x.b.doc).replace(/\s/g, ''); return codIn ? 'código patrimonial citado' : docEq ? 'mismo documento' : com >= 2 ? `descripción coincidente (${com} términos)` : ''; };
+    const E = C.filter(x => x.v === anC2(f.imp) && evid(x));
+    const base = { sentido: `${T} (nota sin O/C) → Registro patrimonial`, anio: f.anio, mesC: f.mes, oc: f.ocRaw || '', ocP: '', ocN: '', ctaC: f.cta, impC: f.imp, siaf: f.siaf, filas: [f.fila], corr: [], obs: [] };
+    if (E.length === 1 && C.filter(x => x.v === anC2(f.imp)).length === 1) { const x = E[0]; usados.add(x.b);
+      push({ ...base, estado: 'NOTA_OK', mesP: String(x.m), ocP: x.b.doc || '', bienes: [x.b.cod], ctaP: x.cta, impP: x.v / 100, dif: 0, sustento: `Nota contable sin O/C: único bien del ${f.anio}, mes ${f.mes}, cuenta ${f.cta}, con el mismo importe y ${evid(x)}${f.siaf.length ? '; expediente ' + f.siaf.join(' / ') : ''}.` }); }
+    else pend.push({ f, C, base }); }
+  for (const { f, C, base } of pend) { const L = C.filter(x => !usados.has(x.b)), igual = L.filter(x => x.v === anC2(f.imp)), tot = L.reduce((a, x) => a + x.v, 0);
+    if (!L.length) push({ ...base, estado: 'SIN_PATRIMONIO', mesP: '', bienes: [], ctaP: '', impP: null, dif: null, sustento: f.mes == null ? `Registro sin O/C y sin mes: no se puede buscar por año, mes y cuenta.` : `Registro sin O/C: no hay bienes del ${f.anio}, mes ${f.mes}, cuenta ${f.cta || '(sin cuenta)'} disponibles en el Registro patrimonial.` });
+    else push({ ...base, estado: 'PENDIENTE', mesP: String(f.mes), bienes: (igual.length ? igual : L).slice(0, 30).map(x => x.b.cod), ctaP: f.cta, impP: igual.length === 1 ? igual[0].v / 100 : tot / 100, dif: igual.length === 1 ? 0 : (anC2(f.imp) - tot) / 100,
+      obs: [igual.length === 1 ? 'Un bien coincide en año, mes, cuenta e importe, pero sin evidencia documental (documento, descripción o código): la coincidencia de cuenta no acredita la conciliación.' : `${L.length} bien(es) candidatos del mismo año, mes y cuenta${igual.length > 1 ? `; ${igual.length} con el mismo importe` : ''}${tot === anC2(f.imp) && L.length > 1 ? '; el total de los candidatos coincide, pero no se agrupa solo por importes' : ''}.`],
+      sustento: `Nota contable sin O/C del ${f.anio}, mes ${f.mes}, cuenta ${f.cta}: requiere revisión; no se realizan correcciones automáticas.` }); }
+  /* 3) Del Registro patrimonial hacia el reporte: bienes sin coincidencia */
+  const sinC = new Map(); B.forEach(x => { if (usados.has(x.b)) return; if (x.oc && isFinite(x.y)) { const kk = x.y + '|' + x.oc.n; (sinC.get(kk) || sinC.set(kk, []).get(kk)).push(x); }
+    else push({ sentido: `Registro patrimonial → ${T}`, estado: 'SIN_OC', anio: isFinite(x.y) ? x.y : '', mesC: '', mesP: x.m ?? '', oc: '', ocP: x.b.doc || '', ocN: '', bienes: [x.b.cod], ctaC: '', ctaP: x.cta, impC: null, impP: x.v / 100, dif: null, siaf: [], filas: [], corr: [], obs: [], sustento: `El documento de adquisición «${x.b.doc || 'vacío'}» no es una orden de compra; ${notas.length ? 'no se identificó una nota contable con evidencia suficiente' : 'no hay notas contables para buscar'}.` }); });
+  for (const [kk, X] of sinC) { const [anio, n] = kk.split('|');
+    push({ sentido: `Registro patrimonial → ${T}`, estado: 'SIN_CONTABLE', anio: +anio, mesC: '', mesP: uniq(X.map(x => x.m)).join(', '), oc: '', ocP: uniq(X.map(x => x.b.doc)).join(' / '), ocN: n, bienes: X.map(x => x.b.cod), ctaC: '', ctaP: uniq(X.map(x => x.cta)).join(' / '), impC: null, impP: X.reduce((a, x) => a + x.v, 0) / 100, dif: null, siaf: [], filas: [], corr: [], obs: [], sustento: `La O/C ${n} del ${anio} no figura en ${T} para el mismo año.` + otros(n, anio) }); }
+  return res; }
+/* Campos del análisis que llenó un reporte (Eliminar no toca lo escrito a mano ni lo del otro reporte) */
+const AN_FIELDS = ['cv', 'cc', 'siaf', 'corr'];
+const anSrcCampos = (b, k) => { const a = b?.an; if (!a) return []; if (a.de) return AN_FIELDS.filter(f => a.de[f] === k); return a.src === k ? ['cv', 'cc', 'siaf'] : []; };
+const anSrcN = k => sanArr().filter(b => anSrcCampos(b, k).length || b.an?.est?.[k]).length;
+function anLimpiar(k) { let n = 0; sanArr().forEach(b => { const a = b.an; if (!a) return; const F = anSrcCampos(b, k); if (!F.length && !a.est?.[k]) return;
+  F.forEach(f => { a[f] = ''; if (a.de) delete a.de[f]; if (f === 'corr') { delete a.corrMot; delete a.corrDe; } }); if (a.src === k) delete a.src; if (a.est) delete a.est[k]; n++; }); return n; }
+/* Vuelca los resultados en el Análisis: estado por bien; valor/cuenta contable, corrección y SIAF solo cuando corresponde */
+function anAplicar(k, res) { anLimpiar(k); const idx = new Map(sanArr().map(b => [String(b.cod), b])); let ok = 0, cons = 0;
+  const set = (b, f, v) => { const a = b.an; if (a[f] !== '' && a[f] != null && !(a.de && a.de[f])) { cons++; return; } a[f] = v; (a.de = a.de || {})[f] = k; };
+  for (const r of res) { const unoAuno = r.bienes.length === 1 && r.filas.length >= 1 && r.impC != null;
+    for (const cod of r.bienes) { const b = idx.get(String(cod)); if (!b || r.estado === 'PENDIENTE') { if (b) { b.an = b.an || {}; (b.an.est = b.an.est || {})[k] = { e: r.estado, id: r.id }; } continue; }
+      b.an = b.an || {}; (b.an.est = b.an.est || {})[k] = { e: r.estado, id: r.id };
+      if (AN_OK.has(r.estado)) { ok++; set(b, 'cv', r.bienes.length === 1 ? Math.round(r.impC * 100) / 100 : Math.round((+b.valor || 0) * 100) / 100); if (r.ctaC) set(b, 'cc', r.ctaC); if (r.siaf.length) set(b, 'siaf', r.siaf.join(' / ').toUpperCase());
+        const c = r.corr.find(x => x.cod === cod); if (c) { set(b, 'corr', c.a); if (b.an.de?.corr === k) { b.an.corrMot = c.mot; b.an.corrDe = c.de; } } }
+      else if ((r.estado === 'DIF_IMPORTE' || r.estado === 'DIF_MES') && unoAuno && r.filas.length) { set(b, 'cv', Math.round(r.impC * 100) / 100); if (r.ctaC) set(b, 'cc', r.ctaC); } } }
+  return { ok, cons }; }
+/* ---- Importación: lectura, equivalencia de columnas y validación previa ---- */
+async function anSrcLeer(k, f) { const T = anT(k);
+  try { toast(`Leyendo reporte ${T}: ${f.name}…`, 'info'); const sheets = (await IMP.readFile(f)).filter(s => (s.rows || []).length);
+    if (!sheets.length) throw new Error('El archivo no tiene datos.');
+    let si = 0, det = null; sheets.forEach((s, i) => { const d = anDetect(s.rows, k); const sc = d.sc + Object.values(d.map).filter(x => x >= 0).length; if (!det || sc > det.score) { det = { ...d, score: sc }; si = i; } });
+    const I = { k, nombre: f.name, size: f.size, sheets, si, hdr: det.hdr, map: det.map, rec: true, hash: anHash(sheets.map(s => s.rows)) };
+    VIEWS.analisis.imp = I;
+    const prev = S.sanSrcData?.[k]; if (prev && prev.hash === I.hash) return modal(`Reporte ${T} ya cargado`, `<p>El archivo <b>${h(f.name)}</b> es el mismo que se cargó el ${fmtD(prev.fecha.slice(0, 10))} (${fmtI(prev.filas.length)} filas). No se duplican registros.</p><p class="muted">Puede volver a ejecutar el cruce con los datos actuales del inventario valorizado y de la tabla UIT.</p>`,
+      `<button class="mini ghost" data-a="anImpCancel">${ic('x')}Cancelar</button><button class="mini" data-a="anReconc" data-k="${k}">${ic('refresh-cw')}Volver a conciliar</button>`, { tone: 'info', icon: 'copy' });
+    anMapModal(); } catch (e) { console.error(e); toast(e.message, 'bad', 8000); } }
+function anMapModal() { const I = VIEWS.analisis.imp; if (!I) return; const T = anT(I.k), rows = I.sheets[I.si].rows, H = I.hdr >= 0 ? rows[I.hdr] || [] : [], v = anValidar(I);
+  const ncol = Math.min(80, Math.max(H.length, ...rows.slice(I.hdr + 1, I.hdr + 50).map(w => (w || []).length)));
+  const opts = sel => `<option value="-1">— No usar —</option>` + Array.from({ length: ncol }, (_, i) => `<option value="${i}" ${sel === i ? 'selected' : ''}>${anCol(i)} · ${h(String(H[i] ?? '').trim().slice(0, 34) || '(sin encabezado)')}</option>`).join('');
+  const muestra = i => i < 0 ? '' : rows.slice(I.hdr + 1).filter(w => w && w[i] != null && String(w[i]).trim() !== '').slice(0, 3).map(w => h(String(w[i]).slice(0, 18))).join(' · ');
+  const col = { ok: '--ok', warn: '--warn', err: '--bad', off: '--muted' }, ref = AN_REF[I.k] || {};
+  modal(`Importar reporte ${T} · validar columnas`, `<div class="anmap">
+    <p>Archivo <b>${h(I.nombre)}</b>${I.sheets.length > 1 ? ` · hoja <select class="anm-sel" data-anm="si">${I.sheets.map((s, i) => `<option value="${i}" ${i === I.si ? 'selected' : ''}>${h(s.name || 'Hoja ' + (i + 1))}</option>`).join('')}</select>` : ''} · fila de encabezados <input class="anm-in" data-anm="hdr" type="number" min="0" value="${I.hdr + 1}" title="0 = sin encabezados"> · ${fmtI(Math.max(0, rows.length - I.hdr - 1))} filas de datos</p>
+    <div class="tbl-wrap"><table class="anm-t"><thead><tr><th>Campo</th><th>Columna del archivo</th><th>Muestra</th><th>Validación</th></tr></thead><tbody>
+    ${AN_CAMPOS.map(([f, t, req]) => `<tr><td><b>${h(t)}</b>${req ? ' <span class="req">*</span>' : ''}${ref[f] != null ? `<div class="muted">Referencia inicial: columna ${anCol(ref[f])}</div>` : ''}</td><td><select class="anm-sel" data-anm="${f}">${opts(I.map[f])}</select></td><td class="muted">${muestra(I.map[f])}</td><td><span class="badge" style="--k:var(${col[v.out[f].lvl]})">${h(v.out[f].txt)}</span></td></tr>`).join('')}</tbody></table></div>
+    ${v.glob.length ? `<div class="alert" style="--k:var(${v.err ? '--bad' : '--warn'});margin-top:10px">${ic('info')}<div>${v.glob.map(h).join('<br>')}</div></div>` : ''}
+    <label class="anm-rec"><input type="checkbox" data-anm="rec" ${I.rec ? 'checked' : ''}> Recordar esta equivalencia para el reporte ${h(T)}</label>
+    <p class="muted" style="margin:6px 0 0">Se conserva la fila original de cada registro. Una carga nueva reemplaza la anterior de ${h(T)}; no modifica el inventario de los usuarios.</p></div>`,
+    `<button class="mini ghost" data-a="anImpCancel">${ic('x')}Cancelar</button><button class="mini" data-a="anImpOk" ${v.err ? 'disabled title="Corrija la equivalencia de columnas"' : ''}>${ic('check')}Procesar y conciliar</button>`, { icon: 'upload' });
+  const body = $('#modal .m-body'); body.onchange = e => { const t = e.target.closest('[data-anm]'); if (!t) return; const a = t.dataset.anm;
+    if (a === 'rec') { I.rec = t.checked; return; }
+    if (a === 'si') { I.si = +t.value; const d = anDetect(I.sheets[I.si].rows, I.k); I.hdr = d.hdr; I.map = d.map; }
+    else if (a === 'hdr') { const d = anDetect(I.sheets[I.si].rows, I.k, Math.max(0, +t.value || 0) - 1); I.hdr = d.hdr >= 0 ? d.hdr : Math.max(0, +t.value || 0) - 1; I.map = d.map; }
+    else I.map[a] = +t.value; anMapModal(); }; }
+/* ---- Matriz de resultados ---- */
+const anEstBadge = e => `<span class="badge" style="--k:var(${(AN_EST[e] || [])[1] || '--muted'})">${h((AN_EST[e] || [e])[0])}</span>`;
+const anFila = (r, i) => [i + 1, (AN_EST[r.estado] || [r.estado])[0], r.sentido, r.anio, r.mesC ?? '', r.mesP ?? '', [r.oc, r.ocP].filter(Boolean).join(' | '), r.bienes.join(', '), r.ctaC, r.ctaP, r.impC ?? '', r.impP ?? '', r.dif ?? '', r.corr.map(c => `${c.cod}: ${c.de || '—'} → ${c.a}`).join('; '), r.siaf.join(' / '), r.filas.length ? 'Filas ' + r.filas.join(', ') : '', [r.sustento, ...r.obs, ...r.corr.map(c => c.mot)].join(' ')];
+
+const anEstCell = b => { const E = b.an?.est || {}; return AN_SRC.filter(([k]) => E[k]).map(([k, t]) => `<div class="an-eb"><small>${h(t)}</small>${anEstBadge(E[k].e)}</div>`).join('') || '<span class="muted">—</span>'; };
+function anConcCard() { const C = S.sanConc || {}, ks = AN_SRC.map(x => x[0]).filter(k => C[k] && S.sanSrcData?.[k]); if (!ks.length) return '';
+  const k = ks.includes(VIEWS.analisis.ctab) ? VIEWS.analisis.ctab : ks[0], D = S.sanSrcData[k], res = C[k].res, cnt = {}; res.forEach(r => cnt[r.estado] = (cnt[r.estado] || 0) + 1);
+  const err = D.errores.filter(e => !e.aviso), av = D.errores.filter(e => e.aviso), conc = res.filter(r => AN_OK.has(r.estado));
+  return card(`Conciliación ${anT(k)} – Registro patrimonial`, 'git-compare-arrows', `${ks.length > 1 ? `<div class="an-tabs">${ks.map(x => `<button class="mini ${x === k ? '' : 'ghost'}" data-anct="${x}">${h(anT(x))}</button>`).join('')}</div>` : ''}
+    <p class="muted" style="margin:0 0 10px">Archivo <b>${h(D.archivo)}</b>${D.hoja ? ` · hoja ${h(D.hoja)}` : ''} · encabezados en la fila ${D.hdr || '—'} · ${fmtI(D.filas.length)} filas procesadas · cruce del ${fmtD(C[k].fecha.slice(0, 10))}. Columnas: ${Object.entries(D.hdrs || {}).map(([f, t]) => `${h(AN_C[f]?.[1] || f)} = <b>${h(t)}</b>`).join('; ')}.</p>
+    <div class="kpis">${kpi('Operaciones conciliadas', fmtI(conc.length), `S/ ${fmtN(conc.reduce((a, r) => a + (+r.impC || 0), 0))}`, '--ok')}${kpi('Corrección propuesta', fmtI(cnt.CONC_CORR || 0), 'cuenta del Registro patrimonial validada', '--c-san')}${kpi('Diferencias y pendientes', fmtI((cnt.DIF_IMPORTE || 0) + (cnt.DIF_MES || 0) + (cnt.AMBIGUO || 0) + (cnt.PENDIENTE || 0) + (cnt.CONC_PEND || 0)), 'requieren revisión', '--warn')}${kpi('Sin coincidencia', fmtI((cnt.SIN_PATRIMONIO || 0) + (cnt.SIN_CONTABLE || 0) + (cnt.SIN_OC || 0)), `${fmtI(cnt.SIN_PATRIMONIO || 0)} contables · ${fmtI((cnt.SIN_CONTABLE || 0) + (cnt.SIN_OC || 0))} patrimoniales`, '--muted')}</div>
+    <div class="tbl-bar" style="margin-top:12px"><label class="input sm">${ic('filter')}<select id="anc-f"><option value="">Todos los estados (${fmtI(res.length)})</option>${Object.keys(AN_EST).filter(e => cnt[e]).map(e => `<option value="${e}" ${VIEWS.analisis.cf === e ? 'selected' : ''}>${h(AN_EST[e][0])} (${fmtI(cnt[e])})</option>`).join('')}</select></label><button class="mini" data-a="anReconc" data-k="${k}">${ic('refresh-cw')}Volver a conciliar</button></div>
+    <div id="ancTbl"></div>
+    ${D.errores.length ? `<details class="an-err"><summary>${ic('triangle-alert')}Errores de importación: ${fmtI(err.length)} filas no incluidas${av.length ? ` · ${fmtI(av.length)} avisos` : ''}</summary><div class="tbl-wrap"><table class="anm-t"><thead><tr><th>Fila</th><th>Tipo</th><th>Detalle</th></tr></thead><tbody>${D.errores.slice(0, 300).map(e => `<tr><td class="c">${e.fila}</td><td>${e.aviso ? 'Aviso' : 'Error'}</td><td>${h(e.motivo)}</td></tr>`).join('')}</tbody></table></div>${D.errores.length > 300 ? `<p class="muted">Se muestran los primeros 300 de ${fmtI(D.errores.length)}.</p>` : ''}</details>` : ''}`, '', exportBar('concFuente', k)); }
+function anConcDraw() { const el = $('#ancTbl'); if (!el) return; const ks = AN_SRC.map(x => x[0]).filter(k => S.sanConc?.[k] && S.sanSrcData?.[k]); const k = ks.includes(VIEWS.analisis.ctab) ? VIEWS.analisis.ctab : ks[0]; if (!k) return;
+  const f = VIEWS.analisis.cf, rows = S.sanConc[k].res.filter(r => !f || r.estado === f), mon = v => v === '' || v == null ? '' : fmtN(v);
+  dataTable(el, { rows, pageSize: 15, cols: [
+    { h: 'Estado', html: true, fn: r => anEstBadge(r.estado), txt: r => (AN_EST[r.estado] || [r.estado])[0], sv: r => r.estado },
+    { h: 'Año', k: 'anio', a: 'c' }, { h: 'Mes cont. / patr.', html: true, fn: r => `${r.mesC ?? ''}${r.mesP !== '' && r.mesP != null ? ' / ' + r.mesP : ''}`, a: 'c' },
+    { h: 'O/C', html: true, fn: r => h([r.oc, r.ocP].filter(Boolean).join(' | ') || '—'), txt: r => r.oc + ' ' + r.ocP },
+    { h: 'Bien(es)', html: true, fn: r => r.bienes.length ? `<span class="mono">${h(r.bienes.slice(0, 3).join(', '))}</span>${r.bienes.length > 3 ? ` <span class="muted">+${r.bienes.length - 3}</span>` : ''}` : '—', txt: r => r.bienes.join(' ') },
+    { h: 'Cta. reporte', html: true, fn: r => `<span class="mono">${h(r.ctaC || '—')}</span>`, txt: r => r.ctaC }, { h: 'Cta. patrimonial', html: true, fn: r => `<span class="mono">${h(r.ctaP || '—')}</span>`, txt: r => r.ctaP },
+    { h: 'Importe reporte', html: true, fn: r => mon(r.impC), a: 'r', sv: r => +r.impC || 0 }, { h: 'Valor patrimonial', html: true, fn: r => mon(r.impP), a: 'r', sv: r => +r.impP || 0 },
+    { h: 'Diferencia', html: true, fn: r => r.dif == null ? '' : `<b class="${diffCls(r.dif)}">${fmtN(r.dif)}</b>`, a: 'r', sv: r => Math.abs(+r.dif || 0) },
+    { h: 'Corrección propuesta', html: true, fn: r => r.corr.length ? r.corr.map(c => `<span class="mono">${h(c.cod)}</span>: ${h(c.de || '—')} → <b>${h(c.a)}</b>`).join('<br>') : '', txt: r => r.corr.map(c => c.a).join(' ') },
+    { h: 'SIAF', html: true, fn: r => h(r.siaf.join(' / ')), txt: r => r.siaf.join(' ') },
+    { h: 'Origen', html: true, fn: r => r.filas.length ? `<span class="muted">Filas ${h(r.filas.slice(0, 6).join(', '))}${r.filas.length > 6 ? '…' : ''}</span>` : '—', txt: r => r.filas.join(' ') },
+    { h: 'Sustento / observación', html: true, fn: r => `<div class="an-sus">${h(r.sustento)}${r.obs.map(o => `<br><b>Obs.:</b> ${h(o)}`).join('')}</div>`, txt: r => r.sustento + ' ' + r.obs.join(' ') }] }); }
 
 VIEWS.analisis = { pag: 0, q: '', render(el) {
   const m = M('analisis'), R = an1503Rows(), tPv = R.reduce((a, x) => a + x.pv, 0), tCv = R.reduce((a, x) => a + (+x.cv || 0), 0), nCorr = R.filter(x => x.corr).length;
   el.innerHTML = `<div style="--c:var(${m.c});display:grid;gap:18px">
   <div class="kpis">${kpi('Bienes analizados', fmtI(R.length), 'del inventario valorizado importado', '--c-san')}${kpi('Registro patrimonial', money(tPv))}${kpi('Registro contable', money(tCv))}${kpi('Registrados en contable', fmtI(R.filter(x => x.cv !== '').length), `de ${fmtI(R.length)} bienes`)}${kpi('Con corrección de cuenta', fmtI(nCorr), 'anotadas por el analista', nCorr ? '--warn' : '--ok')}</div>
-  ${card('Análisis de la cuenta contable 1503', 'chart-bar-big', R.length ? `<div class="tbl-bar"><label class="input sm">${ic('search')}<input type="search" id="an-q" placeholder="Buscar código, denominación, cuenta…" value="${h(VIEWS.analisis.q)}"></label><span class="muted" id="an-n"></span><span class="an-src">${AN_SRC.map(([k, t, i, c]) => `<span class="an-sg"><label class="mini" style="--c:var(${c});cursor:pointer" title="Importe el reporte ${h(t)} (Excel o TXT): llena Registro contable (valor y cuenta) y SIAF por código patrimonial">${ic(i)}Reporte ${h(t)}<input type="file" data-ansrc="${k}" hidden accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv,.prn"></label><button class="mini an-del" style="--c:var(--bad)" data-a="anSrcDel" data-k="${k}" ${anSrcN(k) ? '' : 'disabled'} title="${anSrcN(k) ? `Eliminar los datos importados del reporte ${h(t)} (${fmtI(anSrcN(k))} bienes)` : `No hay datos importados del reporte ${h(t)}`}">${ic('trash-2')}Eliminar</button></span>`).join('')}</span></div><div id="anTbl"></div>` : `<div class="alert" style="--k:var(--warn)">${ic('info')}<div>Aún no hay inventario valorizado. Impórtelo en <b>Procesar reporte patrimonial › Importar invent. valorizado › Cargar</b>: el análisis se arma solo.</div></div>`, '', R.length ? exportBar('analisis1503') : '')}</div>`;
+  ${card('Análisis de la cuenta contable 1503', 'chart-bar-big', R.length ? `<div class="tbl-bar"><label class="input sm">${ic('search')}<input type="search" id="an-q" placeholder="Buscar código, denominación, cuenta…" value="${h(VIEWS.analisis.q)}"></label><span class="muted" id="an-n"></span><span class="an-src">${AN_SRC.map(([k, t, i, c]) => `<span class="an-sg"><label class="mini" style="--c:var(${c});cursor:pointer" title="Importe el reporte ${h(t)} (Excel o TXT): valida las columnas y concilia con el Registro patrimonial por O/C y año">${ic(i)}Reporte ${h(t)}<input type="file" data-ansrc="${k}" hidden accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv,.prn"></label><button class="mini an-del" style="--c:var(--bad)" data-a="anSrcDel" data-k="${k}" ${anSrcN(k) || S.sanSrcData?.[k] ? '' : 'disabled'} title="${S.sanSrcData?.[k] ? `Eliminar el reporte ${h(t)} cargado (${h(S.sanSrcData[k].archivo)})` : `No hay datos importados del reporte ${h(t)}`}">${ic('trash-2')}Eliminar</button></span>`).join('')}</span></div><div id="anTbl"></div>` : `<div class="alert" style="--k:var(--warn)">${ic('info')}<div>Aún no hay inventario valorizado. Impórtelo en <b>Procesar reporte patrimonial › Importar invent. valorizado › Cargar</b>: el análisis se arma solo.</div></div>`, '', R.length ? exportBar('analisis1503') : '')}${anConcCard()}</div>`;
   if (!R.length) return;
   const draw = () => { const R = an1503Rows(), q = ENG.norm(VIEWS.analisis.q || ''), L = q ? R.filter(x => ENG.norm([x.b.cod, x.b.den, x.b.marca, x.b.modelo, x.b.serie, x.pc, x.cc, x.corr, x.siaf].join(' ')).includes(q)) : R;
     const PS = 50, pages = Math.max(1, Math.ceil(L.length / PS)); VIEWS.analisis.pag = Math.min(VIEWS.analisis.pag, pages - 1); const pg = VIEWS.analisis.pag, sl = L.slice(pg * PS, pg * PS + PS);
     const inp = (x, k, v, w, num) => `<input class="an-in${num ? ' r' : ''}" data-an="${h(x.b.cod)}" data-k="${k}" value="${h(num ? (v === '' ? '' : fmtN(v)) : v)}" style="width:${w}px" ${num ? 'inputmode="decimal"' : ''} aria-label="${k} ${h(x.b.cod)}">`;
     $('#an-n').textContent = `${fmtI(L.length)} bien(es)`;
-    $('#anTbl').innerHTML = `<div class="tbl-wrap"><table class="an-t"><thead><tr><th rowspan="2">N°</th><th rowspan="2">Código patrimonial</th><th colspan="7" class="c">Descripción del bien</th><th rowspan="2">Estado</th><th rowspan="2">Documento adquisición</th><th rowspan="2">Fecha de alta</th><th colspan="2" class="c grp-p">Registro patrimonial</th><th colspan="2" class="c grp-c">Registro contable</th><th rowspan="2" class="grp-x">Corrección de cuenta contable</th><th rowspan="2" class="grp-x">SIAF</th></tr>
+    $('#anTbl').innerHTML = `<div class="tbl-wrap"><table class="an-t"><thead><tr><th rowspan="2">N°</th><th rowspan="2">Código patrimonial</th><th colspan="7" class="c">Descripción del bien</th><th rowspan="2">Estado</th><th rowspan="2">Documento adquisición</th><th rowspan="2">Fecha de alta</th><th colspan="2" class="c grp-p">Registro patrimonial</th><th colspan="2" class="c grp-c">Registro contable</th><th rowspan="2" class="grp-x">Corrección de cuenta contable</th><th rowspan="2" class="grp-x">SIAF</th><th rowspan="2">Estado conciliación</th></tr>
       <tr><th>Denominación</th><th>Marca</th><th>Modelo</th><th>Tipo</th><th>Color</th><th>Serie</th><th>Dimensiones</th><th class="r grp-p">Valor</th><th class="grp-p">Cuenta</th><th class="r grp-c">Valor</th><th class="grp-c">Cuenta</th></tr></thead>
       <tbody>${sl.map(x => `<tr class="${x.corr ? 'an-corr' : ''}"><td class="c">${x.n}</td><td class="mono">${h(x.b.cod)}</td><td>${h(x.b.den || '')}</td><td>${h(x.b.marca || '')}</td><td>${h(x.b.modelo || '')}</td><td>${h(x.b.tipo || '')}</td><td>${h(x.b.color || '')}</td><td class="mono">${h(x.b.serie || '')}</td><td>${h(x.b.dim || '')}</td><td class="c">${h(x.b.estado || '')}</td><td class="c">${h(x.b.doc || '')}</td><td class="c">${x.b.fecha ? fmtD(x.b.fecha) : ''}</td>
-        <td class="r grp-p">${fmtN(x.pv)}</td><td class="mono c grp-p">${h(x.pc)}</td><td class="r grp-c">${inp(x, 'cv', x.cv, 96, true)}</td><td class="grp-c">${inp(x, 'cc', x.cc, 104)}</td><td>${inp(x, 'corr', x.corr, 104)}</td><td>${inp(x, 'siaf', x.siaf, 84)}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="12" class="c"><b>TOTALES</b></td><td class="r"><b>${fmtN(L.reduce((a, x) => a + x.pv, 0))}</b></td><td></td><td class="r"><b>${fmtN(L.reduce((a, x) => a + (+x.cv || 0), 0))}</b></td><td colspan="3"></td></tr></tfoot></table></div>
+        <td class="r grp-p">${fmtN(x.pv)}</td><td class="mono c grp-p">${h(x.pc)}</td><td class="r grp-c">${inp(x, 'cv', x.cv, 96, true)}</td><td class="grp-c">${inp(x, 'cc', x.cc, 104)}</td><td title="${h(x.b.an?.corrMot || '')}">${inp(x, 'corr', x.corr, 104)}</td><td>${inp(x, 'siaf', x.siaf, 84)}</td><td class="an-est">${anEstCell(x.b)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="12" class="c"><b>TOTALES</b></td><td class="r"><b>${fmtN(L.reduce((a, x) => a + x.pv, 0))}</b></td><td></td><td class="r"><b>${fmtN(L.reduce((a, x) => a + (+x.cv || 0), 0))}</b></td><td colspan="4"></td></tr></tfoot></table></div>
       ${pages > 1 ? `<div class="pager"><button class="icon-btn" data-anp="0" ${pg === 0 ? 'disabled' : ''}>${ic('chevrons-left')}</button><button class="icon-btn" data-anp="${pg - 1}" ${pg === 0 ? 'disabled' : ''}>${ic('chevron-left')}</button><span class="muted">Página ${pg + 1} de ${pages}</span><button class="icon-btn" data-anp="${pg + 1}" ${pg >= pages - 1 ? 'disabled' : ''}>${ic('chevron-right')}</button><button class="icon-btn" data-anp="${pages - 1}" ${pg >= pages - 1 ? 'disabled' : ''}>${ic('chevrons-right')}</button></div>` : ''}`; };
-  draw();
+  draw(); anConcDraw();
   $('#an-q').oninput = e => { VIEWS.analisis.q = e.target.value; VIEWS.analisis.pag = 0; draw(); };
-  el.onclick = e => { const b = e.target.closest('[data-anp]'); if (b && !b.disabled) { VIEWS.analisis.pag = +b.dataset.anp; draw(); } };
-  el.onchange = e => { const fi = e.target.closest('[data-ansrc]'); if (fi) { const f = fi.files?.[0], k = fi.dataset.ansrc; fi.value = ''; if (f) anSrcLeer(k, f); return; }
+  el.onclick = e => { const ct = e.target.closest('[data-anct]'); if (ct) { VIEWS.analisis.ctab = ct.dataset.anct; VIEWS.analisis.cf = ''; return refresh(); } const b = e.target.closest('[data-anp]'); if (b && !b.disabled) { VIEWS.analisis.pag = +b.dataset.anp; draw(); } };
+  el.onchange = e => { if (e.target.id === 'anc-f') { VIEWS.analisis.cf = e.target.value; return anConcDraw(); } const fi = e.target.closest('[data-ansrc]'); if (fi) { const f = fi.files?.[0], k = fi.dataset.ansrc; fi.value = ''; if (f) anSrcLeer(k, f); return; }
     const t = e.target.closest('.an-in'); if (!t) return; const b = S.inv.find(x => String(x.cod) === t.dataset.an); if (!b) return; const k = t.dataset.k; b.an = b.an || {};
     if (k === 'cv') { const tx = String(t.value).replace(/,/g, '').trim(); if (tx === '') { b.an.cv = ''; } else { const v = parseFloat(tx); if (!isFinite(v)) { toast('Ingrese un valor numérico', 'warn'); t.value = b.an.cv === '' || b.an.cv == null ? '' : fmtN(b.an.cv); return; } b.an.cv = Math.round(v * 100) / 100; t.value = fmtN(b.an.cv); } }
     else b.an[k] = t.value.trim().toUpperCase();
     if (b.an.de) delete b.an.de[k]; /* escrito a mano: ya no pertenece a ningún reporte */
     t.closest('tr').classList.toggle('an-corr', !!b.an.corr); mutate(`Análisis 1503 · ${b.cod}: ${k === 'cv' ? 'valor contable' : k === 'cc' ? 'cuenta contable' : k === 'corr' ? 'corrección de cuenta' : 'SIAF'} actualizado`);
     if (k === 'cv') { const L = an1503Rows(), f = $('#anTbl tfoot td:nth-child(4) b'); if (f) f.textContent = fmtN(L.reduce((a, x) => a + (+x.cv || 0), 0)); } }; }, act: {
-  anSrcDel(bt) { const k = bt.dataset.k, t = AN_SRC.find(x => x[0] === k)[1], n = anSrcN(k); if (!n) return toast(`No hay datos importados del reporte ${t}`, 'info');
-    const ar = S.sanSrc?.[k];
-    modal(`Eliminar reporte ${t}`, `<p>Se quitarán los datos que llenó el reporte <b>${h(t)}</b>${ar ? ` (<b>${h(ar.nombre)}</b>)` : ''} en <b>${fmtI(n)}</b> bien(es) del análisis: valor contable, cuenta contable y/o SIAF.</p><div class="alert" style="--k:var(--warn)">${ic('info')}<div>Lo escrito a mano y lo importado del otro reporte se conserva. No modifica el inventario de los usuarios ni el inventario valorizado del saneamiento.</div></div>`,
+  anSrcDel(bt) { const k = bt.dataset.k, t = anT(k), n = anSrcN(k), D = S.sanSrcData?.[k]; if (!n && !D) return toast(`No hay datos importados del reporte ${t}`, 'info');
+    modal(`Eliminar reporte ${t}`, `<p>Se eliminará el reporte <b>${h(t)}</b>${D ? ` (<b>${h(D.archivo)}</b>, ${fmtI(D.filas.length)} filas)` : ''}, su matriz de conciliación y los datos que llenó en <b>${fmtI(n)}</b> bien(es) del análisis: valor y cuenta contable, corrección de cuenta, SIAF y estado.</p><div class="alert" style="--k:var(--warn)">${ic('info')}<div>Lo escrito a mano y lo importado del otro reporte se conserva. No modifica el inventario de los usuarios ni el inventario valorizado del saneamiento.</div></div>`,
       `<button class="mini ghost" data-close>${ic('x')}Cancelar</button><button class="mini danger" data-a="anSrcDelOk" data-k="${k}">${ic('trash-2')}Eliminar</button>`, { tone: 'warn', icon: 'trash-2' }); },
-  anSrcDelOk(bt) { const k = bt.dataset.k, t = AN_SRC.find(x => x[0] === k)[1]; closeModal(); let n = 0;
-    sanArr().forEach(b => { const F = anSrcCampos(b, k); if (!F.length) return; F.forEach(f => { b.an[f] = ''; if (b.an.de) delete b.an.de[f]; }); if (b.an.src === k) delete b.an.src; n++; });
-    if (S.sanSrc) delete S.sanSrc[k]; mutate(`Análisis 1503: datos del reporte ${t} eliminados (${n} bienes)`); toast(`Reporte ${t} eliminado: ${fmtI(n)} bienes limpiados`, 'ok', 4500); refresh(); },
-  anSrcCancelar() { VIEWS.analisis.srcPend = null; closeModal(); toast('Importación cancelada: el análisis no cambió', 'info'); },
-  anSrcAceptar() { const P = VIEWS.analisis.srcPend; closeModal(); if (!P) return; VIEWS.analisis.srcPend = null; const { p } = P; let n = 0;
-    sanArr().forEach(b => { const c = anCod(b.cod), o = p.M.get(c) || p.M.get(c.replace(/^0+/, '')); if (!o) return; b.an = b.an || {};
-      const de = b.an.de = b.an.de || {}; if (p.cols.val && o.hayV) { b.an.cv = Math.round(o.cv * 100) / 100; de.cv = P.k; } if (p.cols.cta && o.cc) { b.an.cc = o.cc; de.cc = P.k; } if (p.cols.siaf && o.siaf.length) { b.an.siaf = o.siaf.join(' / ').toUpperCase(); de.siaf = P.k; } b.an.src = P.k; n++; });
-    S.sanSrc = { ...(S.sanSrc || {}), [P.k]: { nombre: P.nombre, fecha: new Date().toISOString(), n } };
-    mutate(`Análisis 1503: reporte ${P.t} importado (${P.nombre}), ${n} bienes actualizados`); toast(`Reporte ${P.t}: ${fmtI(n)} bienes actualizados en Registro contable`, 'ok', 5000); refresh(); }
+  anSrcDelOk(bt) { const k = bt.dataset.k, t = anT(k); closeModal(); const n = anLimpiar(k);
+    if (S.sanSrcData) delete S.sanSrcData[k]; if (S.sanConc) delete S.sanConc[k]; if (S.sanSrc) delete S.sanSrc[k];
+    mutate(`Análisis 1503: reporte ${t} eliminado (${n} bienes)`); toast(`Reporte ${t} eliminado: ${fmtI(n)} bienes limpiados`, 'ok', 4500); refresh(); },
+  anImpCancel() { VIEWS.analisis.imp = null; closeModal(); toast('Importación cancelada: el análisis no cambió', 'info'); },
+  anImpOk() { const I = VIEWS.analisis.imp; if (!I) return closeModal(); const v = anValidar(I); if (v.err) return toast('Corrija la equivalencia de columnas antes de procesar', 'warn');
+    const { filas, errores } = anLeerFilas(I); if (!filas.length) return toast('No hay filas válidas para procesar: revise la equivalencia de columnas y los errores', 'bad', 7000);
+    const k = I.k, T = anT(k), H = I.hdr >= 0 ? I.sheets[I.si].rows[I.hdr] || [] : [], prev = S.sanSrcData?.[k];
+    S.sanSrcData = S.sanSrcData || {}; S.sanSrcData[k] = { archivo: I.nombre, fecha: new Date().toISOString(), hoja: I.sheets[I.si].name || '', hdr: I.hdr + 1, hash: I.hash, map: { ...I.map }, hdrs: Object.fromEntries(Object.entries(I.map).filter(([, i]) => i >= 0).map(([f, i]) => [f, `${anCol(i)} · ${String(H[i] ?? '').trim()}`])), filas, errores };
+    if (I.rec) { S.sanMap = S.sanMap || {}; S.sanMap[k] = Object.fromEntries(Object.entries(I.map).filter(([, i]) => i >= 0).map(([f, i]) => [f, anH(H[i]) || i])); }
+    VIEWS.analisis.imp = null; closeModal(); VIEWS.analisis.act.anReconc({ dataset: { k } }, true, prev); },
+  anReconc(bt, nuevo, prev) { const k = bt.dataset.k, T = anT(k), D = S.sanSrcData?.[k]; closeModal(); if (!D) return;
+    const res = anConciliar(k); S.sanConc = S.sanConc || {}; S.sanConc[k] = { fecha: new Date().toISOString(), res }; const ap = anAplicar(k, res);
+    const c = {}; res.forEach(r => c[r.estado] = (c[r.estado] || 0) + 1); const conc = (c.CONCILIADO || 0) + (c.CONC_CORR || 0) + (c.CONC_PEND || 0) + (c.NOTA_OK || 0);
+    VIEWS.analisis.ctab = k; VIEWS.analisis.cf = '';
+    mutate(`Análisis 1503: ${nuevo ? `reporte ${T} importado (${D.archivo}, ${D.filas.length} filas${prev ? `; reemplaza a ${prev.archivo}` : ''})` : `cruce con ${T} actualizado`} · ${conc} conciliados, ${res.length - conc} con observación o sin coincidencia`);
+    toast(`${T}: ${fmtI(D.filas.length)} filas · ${fmtI(conc)} operaciones conciliadas · ${fmtI((c.CONC_CORR || 0))} con corrección propuesta · ${fmtI(res.length - conc)} observadas o sin coincidencia${ap.cons ? ` · ${fmtI(ap.cons)} datos escritos a mano se conservaron` : ''}${D.errores.filter(e => !e.aviso).length ? ` · ${fmtI(D.errores.filter(e => !e.aviso).length)} filas con error` : ''}`, 'ok', 9000); refresh(); }
 } };
 
 /* ---------- Saneamiento: Corrección / Reclasificación / Depuración ---------- */
@@ -5292,8 +5516,8 @@ VIEWS.migracion = { render(el) {
    La entidad activa vive en S; las demás se guardan en S.ents[id]. */
 let SBN_PASS = '';
 const ENT_CFG = ['sinabipBajas', 'acta', 'sinabipUser', 'sinabipSes', 'sinabipImp', 'entidad', 'corte', 'metodo', 'periodos', 'comision', 'cronograma', 'cronoIni', 'ritmo', 'equipos', 'inventariadores', 'personal', 'a7'];
-function entSnap() { return { inv: S.inv, sanInv: S.sanInv || [], sanArch: S.sanArch || null, base: S.base, sinabip: S.sinabip || [], bal: S.bal, log: S.log || [], cfg: Object.fromEntries(ENT_CFG.map(k => [k, S.cfg[k]])) }; }
-function entLoad(e) { S.inv = e.inv || []; S.sanInv = e.sanInv || []; S.sanArch = e.sanArch || null; S.base = e.base || []; S.sinabip = e.sinabip || []; S.bal = e.bal || null; S.log = e.log || []; ENT_CFG.forEach(k => { S.cfg[k] = e.cfg?.[k]; }); }
+function entSnap() { return { inv: S.inv, sanInv: S.sanInv || [], sanArch: S.sanArch || null, sanSrcData: S.sanSrcData || {}, sanConc: S.sanConc || {}, sanMap: S.sanMap || {}, base: S.base, sinabip: S.sinabip || [], bal: S.bal, log: S.log || [], cfg: Object.fromEntries(ENT_CFG.map(k => [k, S.cfg[k]])) }; }
+function entLoad(e) { S.inv = e.inv || []; S.sanInv = e.sanInv || []; S.sanArch = e.sanArch || null; S.sanSrcData = e.sanSrcData || {}; S.sanConc = e.sanConc || {}; S.sanMap = e.sanMap || {}; S.base = e.base || []; S.sinabip = e.sinabip || []; S.bal = e.bal || null; S.log = e.log || []; ENT_CFG.forEach(k => { S.cfg[k] = e.cfg?.[k]; }); }
 function entEnsure() { if (!S.ents) { S.ents = { E1: null }; S.entId = 'E1'; } }
 function entMeta(id) { const e = id === S.entId ? { cfg: S.cfg, inv: S.inv, base: S.base, sinabip: S.sinabip, bal: S.bal } : S.ents[id]; const en = e?.cfg?.entidad || {}; return { id, nombre: en.nombre || 'Entidad sin nombre', ruc: en.ruc || '', ue: en.ue || '', sec: en.secEjec || '', inv: (e?.inv || []).length, base: (e?.base || []).length, sin: (e?.sinabip || []).length, bal: e?.bal?.meta?.periodo || '' }; }
 function entSwitch(id, silent) { if (!S.ents[id] && id !== S.entId) return; if (id === S.entId) return; S.ents[S.entId] = entSnap(); entLoad(S.ents[id]); S.ents[id] = null; S.entId = id; invalidate(); mutate(); if (!silent) { toast('Entidad activa: ' + (S.cfg.entidad.nombre || id), 'ok'); route(); } if (SRV.token) srvTick(); }
@@ -5707,6 +5931,12 @@ let SAN_ON = false;
 function withSan(fn) { if (SAN_ON || !S) return fn(); const inv = S.inv; invalidate(); S.inv = Array.isArray(S.sanInv) ? S.sanInv : (S.sanInv = []); SAN_ON = true;
   try { return fn(); } finally { S.sanInv = S.inv; S.inv = inv; SAN_ON = false; invalidate(); } }
 function sanEl(v) { ['onclick', 'onchange', 'oninput', 'onkeyup', 'onkeydown', 'onfocusout'].forEach(k => { const f = v[k]; if (typeof f === 'function') v[k] = e => withSan(() => f.call(v, e)); }); }
+REP.REPORTS.concFuente = k => { const T = anT(k), D = S.sanSrcData?.[k], C = S.sanConc?.[k];
+  return { title: `CONCILIACIÓN ${T.toUpperCase()} – REGISTRO PATRIMONIAL (CUENTA 1503)`, file: `CONCILIACION_${T.replace(/\s+/g, '_').toUpperCase()}`, sub: D ? `Archivo: ${D.archivo}${D.hoja ? ' · hoja ' + D.hoja : ''} · ${D.filas.length} filas · cruce del ${fmtD((C?.fecha || D.fecha).slice(0, 10))} · clave: entidad + año de registro + N° de O/C` : '',
+    cols: [{ h: 'N°', x: 'int', wx: 6, pw: 3 }, { h: 'ESTADO', wx: 22, pw: 9 }, { h: 'SENTIDO', wx: 24, pw: 9 }, { h: 'AÑO', x: 'c', wx: 7, pw: 4 }, { h: 'MES CONT.', x: 'c', wx: 8, pw: 4 }, { h: 'MES PATR.', x: 'c', wx: 8, pw: 4 }, { h: 'O/C (REPORTE | PATRIMONIO)', wx: 24, pw: 10 }, { h: 'BIEN(ES)', wx: 30, pw: 12 }, { h: 'CTA. REPORTE', wx: 14, pw: 7 }, { h: 'CTA. PATRIMONIAL', wx: 14, pw: 7 },
+      { h: 'IMPORTE REPORTE', x: 'num', wx: 14, pw: 7 }, { h: 'VALOR PATRIMONIAL', x: 'num', wx: 14, pw: 7 }, { h: 'DIFERENCIA', x: 'num', wx: 12, pw: 6 }, { h: 'CORRECCIÓN PROPUESTA', wx: 30, pw: 11 }, { h: 'SIAF', wx: 14, pw: 6 }, { h: 'ORIGEN', wx: 18, pw: 7 }, { h: 'SUSTENTO / OBSERVACIÓN', wx: 70, pw: 22 }],
+    rows: () => (C?.res || []).map(anFila), xlsx: undefined, size: 5.4 }; };
+SAN_REPS.push('concFuente');
 { const _e = REP.exportar; REP.exportar = (...a) => SAN_VIEWS.has(CUR) || SAN_REPS.includes(a[0]) ? withSan(() => _e(...a)) : _e(...a); }
 
 /* ---------- Eventos globales ---------- */
