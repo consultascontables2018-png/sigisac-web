@@ -5168,12 +5168,13 @@ const AN_CAMPOS = [
 ];
 const AN_C = Object.fromEntries(AN_CAMPOS.map(c => [c[0], c]));
 /* CLARISA: solo se reconocen y concilian DEBE, Nro. Docum. Compromiso, Cuenta contable, Año y SIAF; las demás columnas no se usan */
-const AN_CL = [
+const AN_CL = [ /* CLARISA «Detalle de operaciones»: solo las columnas resaltadas en amarillo */
   ['imp', 'DEBE', true, /^DEBE\b/, /HABER/],
-  ['oc', 'Nro. Docum. Compromiso', false, /DOCUM\w* COMPROMISO|DOC\w* COMPROMISO|^COMPROMISO\b/, null],
-  ['cta', 'Cuenta contable', true, /CUENTA|^CTA\b/, /DESCRIP|NOMBRE|DENOMINA|BANCARIA|CORRIENTE/],
+  ['tdoc', 'Docum. Compromiso (tipo: O/C)', false, /^DOCUM\w* COMPROMISO$|^DOC\w* COMPROMISO$|^TIPO DOC\w* COMPROMISO/, /\bNRO\b|\bNUM|^N /],
+  ['oc', 'Nro. Docum. Compromiso', false, /\b(NRO|NUM\w*|N) DOC\w* COMPROMISO|\bNRO\w* COMPROMISO/, null],
+  ['cta', 'Cuenta contable', true, /^CUENTA\b|^CTA CONTABLE$/, /DESCRIP|NOMBRE|DENOMINA|BANCARIA|CORRIENTE/],
   ['anio', 'Año', true, /^ANO\b|^ANIO\b|^A.{0,2}O$|EJERCICIO|ANO (DE )?REG|ANO EJE|ANO CONTAB/, /MES/],
-  ['siaf', 'SIAF', false, /SIAF|EXPEDIENTE|^EXP\b|NRO EXP|^N\w* EXP/, null]];
+  ['siaf', 'SIAF (Exp.)', false, /SIAF|EXPEDIENTE|^EXP\b|NRO EXP|^N\w* EXP/, /MES|SUBCTA/]];
 const anCampos = k => k === 'clarisa' ? AN_CL : AN_CAMPOS;
 const anCdef = (k, f) => anCampos(k).find(c => c[0] === f) || AN_C[f];
 const AN_EST = {
@@ -5190,11 +5191,13 @@ const anH = x => anNN(x).replace(/[^A-Z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim()
 const anHdrOk = (c, x) => c[3].test(x) && !(c[4] && c[4].test(x));
 const anCol = i => { let s = ''; i++; while (i > 0) { const m = (i - 1) % 26; s = String.fromCharCode(65 + m) + s; i = Math.floor((i - 1) / 26); } return s; };
 const anCod = v => String(v ?? '').replace(/\.0+$/, '').replace(/\D/g, '');
-const anCta = v => { let c = String(v ?? '').trim().replace(/\s+/g, ''); if (/^\d{6,}$/.test(c)) c = c.slice(0, 4) + '.' + c.slice(4); return c.toUpperCase(); };
+const anCta = v => { const m0 = /^\s*(\d{4}(?:\.\d+)+|\d{4,12})(?![\d.])/.exec(String(v ?? '')); let c = m0 ? m0[1] : String(v ?? '').trim().replace(/\s+/g, ''); if (/^\d{6,}$/.test(c)) c = c.slice(0, 4) + '.' + c.slice(4); return c.toUpperCase(); };
 const anNum = v => { if (typeof v === 'number') return v; let t = String(v ?? '').trim().replace(/[S\/\s]/g, ''); if (!t) return NaN; if (/^-?[\d.]+,\d{1,2}$/.test(t)) t = t.replace(/\./g, '').replace(',', '.'); else t = t.replace(/,/g, ''); if (/^\(.*\)$/.test(t)) t = '-' + t.slice(1, -1); return /^-?\d+(\.\d+)?$/.test(t) ? parseFloat(t) : NaN; };
 const anC2 = x => Math.round((+x || 0) * 100);
 const anYear = v => { if (v instanceof Date) return v.getFullYear(); const t = String(v ?? '').trim(); let m;
-  if ((m = /^(\d{4})-\d{2}-\d{2}/.exec(t))) return +m[1]; if (/^(19[89]\d|20\d\d|2100)(\.0+)?$/.test(t)) return parseInt(t, 10); if ((m = /^\d{1,2}\/\d{1,2}\/(\d{4})$/.exec(t))) return +m[1]; return NaN; };
+  if ((m = /^(\d{4})-\d{2}-\d{2}/.exec(t))) return +m[1]; if (/^(19[89]\d|20\d\d|2100)(\.0+)?$/.test(t)) return parseInt(t, 10); if ((m = /^\d{1,2}\/\d{1,2}\/(\d{4})$/.exec(t))) return +m[1]; if ((m = AN_YEXP.exec(t))) return +m[1]; return NaN; };
+const AN_YEXP = /^((?:19|20)\d{2})\s+([A-Z]?\d{2,})$/i; /* «2019  0000004575»: año y expediente en la misma celda (CLARISA) */
+const anExp = v => { const t = String(v ?? '').trim(), m = AN_YEXP.exec(t); return (m ? m[2] : t).replace(/\.0+$/, ''); };
 const AN_MESES = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SET', 'OCT', 'NOV', 'DIC'];
 const anMes = v => { if (v instanceof Date) return v.getMonth() + 1; const t = anNN(v).trim(); let m;
   if ((m = /^\d{4}-(\d{2})-\d{2}/.exec(t))) return +m[1]; if ((m = /^(\d{1,2})(\.0+)?$/.exec(t)) && +m[1] >= 1 && +m[1] <= 12) return +m[1]; if ((m = /^\d{1,2}\/(\d{1,2})\/\d{4}$/.exec(t))) return +m[1];
@@ -5209,15 +5212,15 @@ function anOC(raw, comp) { const t0 = String(raw ?? '').trim(); if (!t0) return 
   let n = g[0], y = null; if (g.length >= 2) { const yi = g.findIndex(x => /^(19[89]\d|20\d\d)$/.test(x)); if (yi >= 0) { y = +g[yi]; n = g.find((x, i) => i !== yi) || g[yi]; } }
   n = String(n).replace(/^0+(?=\d)/, ''); if (/^0+$/.test(n)) return null; return { n, y, raw: t0 }; }
 /* Validación del contenido de una columna para un campo */
-function anCheck(f, vals) { const ne = vals.filter(v => v != null && String(v).trim() !== ''); const n = ne.length;
+function anCheck(f, vals) { let ne = vals.filter(v => v != null && String(v).trim() !== ''); if (f === 'anio' || f === 'siaf') ne = ne.filter(v => /\d/.test(String(v))); /* textos de cabecera (p. ej. «APERTURA», «AGOSTO») no cuentan */ const n = ne.length;
   if (!n) return { lvl: 'err', txt: 'Columna sin datos' };
   const r = fn => ne.filter(fn).length / n, pct = x => Math.round(x * 100) + '%';
-  if (f === 'anio') { const p = r(v => isFinite(anYear(v))); return p < .6 ? { lvl: 'err', txt: `Solo ${pct(p)} de los valores son años` } : p < .95 ? { lvl: 'warn', txt: `${pct(p)} son años; las filas sin año válido se informarán como error` } : { lvl: 'ok', txt: 'Años válidos' }; }
+  if (f === 'anio') { const cmb = r(v => AN_YEXP.test(String(v).trim())); if (cmb >= .8) return { lvl: 'ok', txt: 'Años válidos (celda «Año Exp.»: se toma el año)' }; const p = r(v => isFinite(anYear(v))); return p < .6 ? { lvl: 'err', txt: `Solo ${pct(p)} de los valores son años` } : p < .95 ? { lvl: 'warn', txt: `${pct(p)} son años; las filas sin año válido se informarán como error` } : { lvl: 'ok', txt: 'Años válidos' }; }
   if (f === 'mes') { const p = r(v => isFinite(anMes(v))); return p < .6 ? { lvl: 'err', txt: `Solo ${pct(p)} de los valores son meses` } : p < .95 ? { lvl: 'warn', txt: `${pct(p)} son meses` } : { lvl: 'ok', txt: 'Meses válidos' }; }
-  if (f === 'siaf') { const yr = r(v => isFinite(anYear(v)) && !anEsFecha(v)), ms = r(v => /^(0?[1-9]|1[0-2])(\.0+)?$/.test(String(v).trim())), num = r(v => /^\d{1,10}(\.0+)?$/.test(String(v).trim().replace(/[\s-]/g, '')));
+  if (f === 'siaf') { const cmb = r(v => AN_YEXP.test(String(v).trim())); if (cmb >= .8) return { lvl: 'ok', txt: 'Año y expediente en la misma columna: se toma el expediente' }; const yr = r(v => isFinite(anYear(v)) && !anEsFecha(v)), ms = r(v => /^(0?[1-9]|1[0-2])(\.0+)?$/.test(String(v).trim())), num = r(v => /^[A-Z]?\d{1,12}(\.0+)?$/i.test(String(v).trim().replace(/[\s-]/g, '')));
     if (yr > .9) return { lvl: 'err', txt: 'El contenido parece AÑO, no expediente SIAF' }; if (ms > .9) return { lvl: 'err', txt: 'El contenido parece MES, no expediente SIAF' };
     return num < .6 ? { lvl: 'warn', txt: `Solo ${pct(num)} parecen números de expediente` } : { lvl: 'ok', txt: 'Expedientes válidos' }; }
-  if (f === 'cta') { const p = r(v => /^\d{4}(\.?\d{1,8})*$/.test(String(v).trim().replace(/\s+/g, '').replace(/\.0+$/, ''))); return p < .6 ? { lvl: 'err', txt: `Solo ${pct(p)} parecen cuentas contables` } : p < .95 ? { lvl: 'warn', txt: `${pct(p)} son cuentas contables` } : { lvl: 'ok', txt: 'Cuentas válidas' }; }
+  if (f === 'cta') { const p = r(v => /^\s*\d{4}(\.\d+)*(?![\d.])/.test(String(v)) || /^\d{4}(\.?\d{1,8})*$/.test(String(v).trim().replace(/\s+/g, '').replace(/\.0+$/, ''))); return p < .6 ? { lvl: 'err', txt: `Solo ${pct(p)} parecen cuentas contables` } : p < .95 ? { lvl: 'warn', txt: `${pct(p)} son cuentas contables` } : { lvl: 'ok', txt: 'Cuentas válidas' }; }
   if (f === 'imp') { const p = r(v => isFinite(anNum(v))); return p < .8 ? { lvl: 'err', txt: `Solo ${pct(p)} de los valores son importes` } : p < .97 ? { lvl: 'warn', txt: `${pct(p)} son importes` } : { lvl: 'ok', txt: 'Importes válidos' }; }
   if (f === 'oc') { const p = r(v => !!anOC(v, true)), yr = r(v => isFinite(anYear(v)) && !anEsFecha(v)); if (yr > .9) return { lvl: 'err', txt: 'El contenido parece AÑO, no número de orden' };
     const tot = vals.length, con = ne.filter(v => !!anOC(v, true)).length; return { lvl: p < .05 ? 'warn' : 'ok', txt: `${fmtI(con)} de ${fmtI(tot)} filas con N° de O/C; las demás se buscarán como nota contable` }; }
@@ -5234,9 +5237,18 @@ function anDetect(rows, k, hdrF) { const C = anCampos(k), F = C.map(c => c[0]);
   const HR = hdr >= 0 ? [hdr, ...[hdr + 1, hdr - 1].filter(filaHdr)] : [];
   for (const r of HR) (rows[r] || []).forEach((v, i) => { const x = anH(v); if (!x) return; for (const f of F) if (map[f] < 0 && !Object.values(map).includes(i) && anHdrOk(anCdef(k, f), x)) { map[f] = i; break; } });
   const H = []; HR.forEach(r => (rows[r] || []).forEach((v, i) => { const x = String(v ?? '').trim(); if (x) H[i] = H[i] ? H[i] + ' ' + x : x; }));
-  const ini = hdr + 1 + (HR.includes(hdr + 1) ? 1 : 0), data = rows.slice(ini, ini + 300), usado = i => Object.values(map).includes(i), col = i => data.map(w => w?.[i]);
+  const ini = hdr + 1 + (HR.includes(hdr + 1) ? 1 : 0), data = rows.slice(ini, ini + 800), usado = i => Object.values(map).includes(i), col = i => data.map(w => w?.[i]);
   const sv = S.sanMap?.[k]; if (sv) for (const f in sv) { if (!F.includes(f) || map[f] >= 0) continue; const v = sv[f]; const i = typeof v === 'number' ? v : H.findIndex(x => anH(x) === v); if (i >= 0 && !usado(i) && anCheck(f, col(i)).lvl !== 'err') map[f] = i; }
   const ref = AN_REF[k] || {}; for (const f in ref) if (F.includes(f) && map[f] < 0 && !usado(ref[f]) && anCheck(f, col(ref[f])).lvl === 'ok') map[f] = ref[f];
+  if (k === 'clarisa') { const n = Math.min(60, Math.max(0, ...data.map(w => (w || []).length)));
+    /* cuenta contable: la columna con el nivel de cuenta más detallado (p. ej. 1503.020101), aunque no tenga encabezado propio */
+    const lvl = i => { const L = col(i).filter(v => typeof v === 'string').map(v => /^\s*(\d{4}(?:\.\d+)*)(?![\d,])/.exec(v)).filter(Boolean).map(m => m[1].replace(/\D/g, '').length); return L.length >= 2 ? L.reduce((a, b) => a + b, 0) / L.length : 0; };
+    let bi = -1, bl = 0; for (let i = 0; i < n; i++) { if (i !== map.cta && usado(i)) continue; const l = lvl(i); if (l > bl + .01) { bl = l; bi = i; } }
+    if (bi >= 0 && bl > 4 && (map.cta < 0 || bl > lvl(map.cta))) map.cta = bi;
+    /* año y expediente: celda «2019  0000004575» o columnas separadas */
+    if (map.anio < 0) for (let i = 0; i < n; i++) { if (usado(i)) continue; const d = col(i).filter(v => /\d/.test(String(v ?? ''))); if (d.length >= 2 && d.filter(v => AN_YEXP.test(String(v).trim())).length / d.length >= .8) { map.anio = i; if (map.siaf < 0) map.siaf = i; break; } }
+    if (map.anio < 0) for (let i = 0; i < n; i++) if (!usado(i) && anCheck('anio', col(i)).lvl === 'ok' && !col(i).some(anEsFecha)) { map.anio = i; break; }
+    if (map.siaf < 0 && map.anio >= 0 && !usado(map.anio + 1) && anCheck('siaf', col(map.anio + 1)).lvl === 'ok') map.siaf = map.anio + 1; }
   /* año sin encabezado reconocible: columna cuyos valores son años (no fechas) */
   if (map.anio < 0) { const n = Math.max(0, ...data.map(w => (w || []).length)); for (let i = 0; i < n; i++) if (!usado(i) && anCheck('anio', col(i)).lvl === 'ok' && !col(i).some(anEsFecha)) { map.anio = i; break; } }
   return { hdr, map, sc: best.sc, H, ini }; }
@@ -5246,6 +5258,8 @@ function anValidar(I) { const rows = I.sheets[I.si].rows, ini = I.ini ?? I.hdr +
   const por = {}; for (const f in I.map) if (I.map[f] >= 0) (por[I.map[f]] = por[I.map[f]] || []).push(f);
   for (const c in por) if (por[c].length > 1) { const F = por[c], fechas = data.map(w => w?.[+c]).filter(v => v != null && v !== '');
     const okFecha = F.length === 2 && F.includes('anio') && F.includes('mes') && fechas.length && fechas.filter(anEsFecha).length / fechas.length >= .95;
+    const dig = fechas.filter(v => /\d/.test(String(v))), okYExp = F.length === 2 && F.includes('anio') && F.includes('siaf') && dig.length && dig.filter(v => AN_YEXP.test(String(v).trim())).length / dig.length >= .8;
+    if (okYExp) { out.anio = { lvl: 'ok', txt: 'Celda «Año Exp.» verificada: se toma el año' }; out.siaf = { lvl: 'ok', txt: 'Celda «Año Exp.» verificada: se toma el expediente' }; continue; }
     if (!okFecha) { F.forEach(f => out[f] = { lvl: 'err', txt: `La columna ${anCol(+c)} también está asignada a ${F.filter(x => x !== f).map(x => anCdef(I.k, x)[1]).join(', ')}` }); glob.push(`La columna ${anCol(+c)} está asignada a ${F.map(x => anCdef(I.k, x)[1]).join(' y ')}: cada campo debe tener su propia columna.`); }
     else F.forEach(f => out[f] = { lvl: 'ok', txt: `Columna de fechas verificada: ${f === 'anio' ? 'se toma el año' : 'se toma el mes'}` }); }
   if (I.map.oc < 0) glob.push(I.k === 'clarisa' ? 'Sin columna Nro. Docum. Compromiso: los registros se buscarán como notas contables (año y cuenta) y quedarán pendientes de revisión.' : 'Sin columna de O/C: todos los registros se buscarán como notas contables (año, mes y cuenta), con revisión.');
@@ -5257,21 +5271,26 @@ function anLeerFilas(I) { const rows = I.sheets[I.si].rows, M = I.map, filas = [
   const entOk = v => { const t = anH(v); if (!t) return true; const ue = String(en.ue || '').replace(/^0+/, ''), ruc = String(en.ruc || ''), nom = anH(en.nombre); const d = t.replace(/\D/g, '').replace(/^0+/, '');
     return (ue && (d === ue || t.includes(' ' + ue) || t.startsWith(ue + ' '))) || (ruc && t.includes(ruc)) || (nom && (t.includes(nom) || nom.includes(t))) || (!ue && !ruc && !nom); };
   const val = (w, f) => M[f] >= 0 ? w[M[f]] : null;
-  let ultCta = '', hayDatos = false; const ctaDe = w => { let c = anCta(val(w, 'cta')); if (I.ctaSub && /^\d{4}$/.test(c)) { const sub = [1, 2, 3].map(d => String(w[M.cta + d] ?? '').trim().replace(/\.0+$/, '')).filter(x => /^\d{1,4}$/.test(x)); if (sub.length) c = c + '.' + sub.map(x => x.padStart(2, '0')).join(''); } return /^\d{4}/.test(c) ? c : ''; };
+  const CL = I.k === 'clarisa', omit = {}; let ultCta = '', hayDatos = false, modo = null; const ctaDe = w => { let c = anCta(val(w, 'cta')); if (I.ctaSub && /^\d{4}$/.test(c)) { const sub = [1, 2, 3].map(d => String(w[M.cta + d] ?? '').trim().replace(/\.0+$/, '')).filter(x => /^\d{1,4}$/.test(x)); if (sub.length) c = c + '.' + sub.map(x => x.padStart(2, '0')).join(''); } return /^\d{4}/.test(c) ? c : ''; };
   for (let r = I.ini ?? I.hdr + 1; r < rows.length; r++) { const w = rows[r] || [], fila = r + 1;
     const usadas = Object.values(M).filter(i => i >= 0); if (usadas.every(i => w[i] == null || String(w[i]).trim() === '')) continue;
     const txt = w.slice(0, 8).map(anH).join(' '), txtJ = txt.replace(/\s+/g, ''); const anio = anYear(val(w, 'anio'));
-    const c0 = ctaDe(w); if (c0 && !isFinite(anio)) ultCta = c0; /* filas de cabecera de cuenta: la cuenta se arrastra a sus líneas de detalle */
+    const c0 = ctaDe(w); if (c0 && !isFinite(anio)) { ultCta = c0; modo = null; } /* filas de cabecera de cuenta: la cuenta se arrastra a sus líneas de detalle */
+    if (CL && !isFinite(anio)) { const tx = w.map(anH).join(' '); if (/\bAPERTURA\b/.test(tx)) modo = 'APERTURA'; else if (/\bCIERRE\b/.test(tx)) modo = 'CIERRE'; else if (/\b(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SETIEMBRE|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\b/.test(tx)) modo = null; continue; } /* CLARISA: filas de grupo, cuenta, mes y subtotales */
+    if (CL && modo) { omit[modo] = (omit[modo] || 0) + 1; continue; } /* saldos de apertura y cierre: no son operaciones */
     if (!isFinite(anio)) { if (hayDatos && !c0 && !/TOTAL|RESUMEN|INFORMACIONAL|SALDO|ACUMULADO/.test(txtJ)) errores.push({ fila, motivo: `Año de registro inválido: «${String(val(w, 'anio') ?? '')}»` }); continue; }
-    const imp = anNum(val(w, 'imp')); if (!isFinite(imp)) { errores.push({ fila, motivo: `Importe inválido: «${String(val(w, 'imp') ?? '')}»` }); continue; }
+    const imp = anNum(val(w, 'imp')); if (CL && (val(w, 'imp') == null || String(val(w, 'imp')).trim() === '' || imp === 0)) { omit.haber = (omit.haber || 0) + 1; continue; } if (!isFinite(imp)) { errores.push({ fila, motivo: `Importe inválido: «${String(val(w, 'imp') ?? '')}»` }); continue; }
     if (M.ent >= 0 && !entOk(val(w, 'ent'))) { errores.push({ fila, motivo: `Otra entidad: «${String(val(w, 'ent'))}» (no se incluye)` }); continue; }
     const mes = M.mes >= 0 ? anMes(val(w, 'mes')) : NaN; if (M.mes >= 0 && !isFinite(mes)) errores.push({ fila, motivo: `Mes inválido: «${String(val(w, 'mes') ?? '')}» (la fila se incluye sin mes)`, aviso: true });
     hayDatos = true; let cta = ctaDe(w); if (cta) ultCta = cta; else if (ultCta) cta = ultCta; if (!cta) errores.push({ fila, motivo: 'Fila sin cuenta contable (se incluye para el cruce por O/C)', aviso: true });
-    const ocRaw = M.oc >= 0 ? String(val(w, 'oc') ?? '').trim() : '', oc = anOC(ocRaw, true);
+    const tdoc = M.tdoc >= 0 ? String(val(w, 'tdoc') ?? '').trim() : '', esOCt = !tdoc || /\bO\s*[\/.]?\s*C\b|ORDEN\s+DE\s+COMPRA/.test(anNN(tdoc));
+    const ocRaw = M.oc >= 0 ? String(val(w, 'oc') ?? '').trim() : '', oc = esOCt ? anOC(ocRaw, true) : null; /* «Docum. Compromiso» distinto de O/C (O/S, contrato…): el número no es orden de compra */
     if (oc?.y && oc.y !== anio) errores.push({ fila, motivo: `La O/C «${ocRaw}» indica el año ${oc.y} y la fila es del ${anio}: se usa el año de registro`, aviso: true });
-    const siaf = M.siaf >= 0 ? String(val(w, 'siaf') ?? '').split(/[\/;,|]+/).map(x => x.trim().replace(/\.0+$/, '')).filter(Boolean) : [];
-    filas.push({ fila, anio, mes: isFinite(mes) ? mes : null, cta, imp: Math.round(imp * 100) / 100, ocRaw, ocN: oc?.n || '', siaf, doc: String(val(w, 'doc') ?? '').trim(), desc: String(val(w, 'desc') ?? '').trim(), ent: String(val(w, 'ent') ?? '').trim(),
+    const siaf = M.siaf >= 0 ? String(val(w, 'siaf') ?? '').split(/[\/;,|]+/).map(x => anExp(x)).filter(Boolean) : [];
+    filas.push({ fila, anio, mes: isFinite(mes) ? mes : null, cta, imp: Math.round(imp * 100) / 100, ocRaw: [tdoc, ocRaw].filter(Boolean).join(' '), ocN: oc?.n || '', siaf, doc: String(val(w, 'doc') ?? '').trim(), desc: String(val(w, 'desc') ?? '').trim(), ent: String(val(w, 'ent') ?? '').trim(),
       raw: w.slice(0, Math.max(30, Math.max(...usadas) + 1)).map(v => v == null ? '' : String(v).slice(0, 120)) }); }
+  if (omit.APERTURA || omit.CIERRE) errores.push({ fila: '—', motivo: `${fmtI((omit.APERTURA || 0) + (omit.CIERRE || 0))} fila(s) de APERTURA o CIERRE omitidas: son saldos, no operaciones del ejercicio`, aviso: true });
+  if (omit.haber) errores.push({ fila: '—', motivo: `${fmtI(omit.haber)} movimiento(s) sin importe en DEBE omitidos (solo Haber)`, aviso: true });
   return { filas, errores }; }
 const anHash = rows => { let h1 = 0xdeadbeef, h2 = 0x41c6ce57; const s = JSON.stringify(rows); for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); } return ((h2 >>> 0).toString(16) + (h1 >>> 0).toString(16)) + ':' + s.length; };
 /* Validación de la cuenta patrimonial antes de proponerla como corrección */
@@ -5369,12 +5388,13 @@ async function anSrcLeer(k, f) { const T = anT(k);
 function anMapModal() { const I = VIEWS.analisis.imp; if (!I) return; const T = anT(I.k), rows = I.sheets[I.si].rows, H = I.H || (I.hdr >= 0 ? rows[I.hdr] || [] : []), ini = I.ini ?? I.hdr + 1, v = anValidar(I);
   const ncol = Math.min(80, Math.max(H.length, ...rows.slice(ini, ini + 50).map(w => (w || []).length)));
   const opts = sel => `<option value="-1">— No usar —</option>` + Array.from({ length: ncol }, (_, i) => `<option value="${i}" ${sel === i ? 'selected' : ''}>${anCol(i)} · ${h(String(H[i] ?? '').trim().slice(0, 34) || '(sin encabezado)')}</option>`).join('');
-  const muestra = i => i < 0 ? '' : rows.slice(ini).filter(w => w && w[i] != null && String(w[i]).trim() !== '').slice(0, 3).map(w => h(String(w[i]).slice(0, 18))).join(' · ');
+  const muestra = (i, f) => { if (i < 0) return ''; const tf = { anio: v => anYear(v), siaf: v => anExp(v), cta: v => anCta(v) }[f], ok = v => v != null && String(v).trim() !== '' && (!tf || /\d/.test(String(v))) && (f !== 'cta' || /^\s*\d{4}/.test(String(v)));
+    return rows.slice(ini).filter(w => w && ok(w[i])).slice(0, 3).map(w => h(String(tf ? tf(w[i]) : w[i]).slice(0, 18))).join(' · '); };
   const col = { ok: '--ok', warn: '--warn', err: '--bad', off: '--muted' }, ref = AN_REF[I.k] || {};
   modal(`Importar reporte ${T} · validar columnas`, `<div class="anmap">
     <p>Archivo <b>${h(I.nombre)}</b>${I.sheets.length > 1 ? ` · hoja <select class="anm-sel" data-anm="si">${I.sheets.map((s, i) => `<option value="${i}" ${i === I.si ? 'selected' : ''}>${h(s.name || 'Hoja ' + (i + 1))}</option>`).join('')}</select>` : ''} · fila de encabezados <input class="anm-in" data-anm="hdr" type="number" min="0" value="${I.hdr + 1}" title="0 = sin encabezados"> · ${fmtI(Math.max(0, rows.length - ini))} filas de datos</p>
     <div class="tbl-wrap"><table class="anm-t"><thead><tr><th>Campo</th><th>Columna del archivo</th><th>Muestra</th><th>Validación</th></tr></thead><tbody>
-    ${anCampos(I.k).map(([f, t, req]) => `<tr><td><b>${h(t)}</b>${req ? ' <span class="req">*</span>' : ''}${ref[f] != null && (I.map[f] < 0 || I.map[f] === ref[f]) ? `<div class="muted">Referencia inicial: columna ${anCol(ref[f])}</div>` : ''}</td><td><select class="anm-sel" data-anm="${f}">${opts(I.map[f])}</select></td><td class="muted">${muestra(I.map[f])}</td><td><span class="badge" style="--k:var(${col[v.out[f].lvl]})">${h(v.out[f].txt)}</span></td></tr>`).join('')}</tbody></table></div>
+    ${anCampos(I.k).map(([f, t, req]) => `<tr><td><b>${h(t)}</b>${req ? ' <span class="req">*</span>' : ''}${ref[f] != null && (I.map[f] < 0 || I.map[f] === ref[f]) ? `<div class="muted">Referencia inicial: columna ${anCol(ref[f])}</div>` : ''}</td><td><select class="anm-sel" data-anm="${f}">${opts(I.map[f])}</select></td><td class="muted">${muestra(I.map[f], f)}</td><td><span class="badge" style="--k:var(${col[v.out[f].lvl]})">${h(v.out[f].txt)}</span></td></tr>`).join('')}</tbody></table></div>
     ${v.glob.length ? `<div class="alert" style="--k:var(${v.err ? '--bad' : '--warn'});margin-top:10px">${ic('info')}<div>${v.glob.map(h).join('<br>')}</div></div>` : ''}
     <label class="anm-rec"><input type="checkbox" data-anm="rec" ${I.rec ? 'checked' : ''}> Recordar esta equivalencia para el reporte ${h(T)}</label>
     <p class="muted" style="margin:6px 0 0">Se conserva la fila original de cada registro. Una carga nueva reemplaza la anterior de ${h(T)}; no modifica el inventario de los usuarios.</p></div>`,

@@ -5,16 +5,18 @@ Todo trabaja sobre el inventario valorizado del saneamiento. No modifica el inve
 
 ## 1. Importación (Excel .xlsx/.xls o TXT/CSV)
 
-**CLARISA: solo se reconocen y concilian 5 columnas** (las demás no se usan):
-- **DEBE** (importe)
-- **Nro. Docum. Compromiso** (O/C)
-- **Cuenta contable**
-- **Año**
-- **SIAF** (expediente)
+**CLARISA («Detalle de operaciones», grupo 15): solo se usan las columnas resaltadas en amarillo** (las demás no se usan):
+- **Debe** (importe)
+- **Docum. Compromiso** (tipo: solo «O/C» se trata como orden de compra; O/S u otros no)
+- **Nro. Docum. Compromiso** (N° de O/C, p. ej. 0000805 → 805)
+- **Cuenta contable**: la columna SubCta3, con el nivel más detallado (p. ej. 1503.020101). Viene en la fila de cabecera de cuenta y se aplica a sus líneas de detalle. Se reconoce por contenido aunque no tenga encabezado propio.
+- **Año** y **SIAF (Exp.)**: la celda «2019  0000004575» trae el año y el expediente juntos (se verifica y se separa). También se aceptan en columnas separadas.
 
-Como CLARISA no aporta mes, no se compara el mes. Los registros sin O/C buscan candidatos por año y cuenta y siempre quedan pendientes de revisión.
-
-Si la cuenta viene como «Cuenta SubCta1 SubCta2 SubCta3» (1503 | 02 | 01 | 02), se compone 1503.020102. Una fila de cabecera de cuenta sin año se arrastra a sus líneas de detalle. Las filas de totales («T O T A L», «INFORMACION AL…») se omiten. El encabezado puede estar en una o dos filas (p. ej. «Año» y «SIAF» debajo de la fila principal). Si «Año» no tiene encabezado reconocible, se toma la columna cuyos valores son años.
+Reglas de lectura:
+- Las filas de grupo, cuenta, mes y subtotales no son operaciones: se omiten.
+- Las líneas bajo **APERTURA** (00) y **CIERRE** (13) son saldos: se omiten y se informan como aviso.
+- Los movimientos sin importe en Debe (solo Haber) se omiten.
+- Como no se usa el mes, no se compara el mes. Los registros sin O/C buscan candidatos por año y cuenta y siempre quedan pendientes de revisión.
 
 - **Detección automática:** se detecta la hoja y la fila de encabezados, y las columnas se reconocen por su encabezado.
 - **Referencias iniciales de CLARISA:** se aplican solo si el encabezado no identifica la columna y su contenido es válido.
