@@ -5251,6 +5251,7 @@ function anDetect(rows, k, hdrF) { const C = anCampos(k), F = C.map(c => c[0]);
     if (map.siaf < 0 && map.anio >= 0 && !usado(map.anio + 1) && anCheck('siaf', col(map.anio + 1)).lvl === 'ok') map.siaf = map.anio + 1; }
   /* año sin encabezado reconocible: columna cuyos valores son años (no fechas) */
   if (map.anio < 0) { const n = Math.max(0, ...data.map(w => (w || []).length)); for (let i = 0; i < n; i++) if (!usado(i) && anCheck('anio', col(i)).lvl === 'ok' && !col(i).some(anEsFecha)) { map.anio = i; break; } }
+  if (F.includes('siaf') && map.siaf < 0 && map.anio >= 0) { const d = col(map.anio).filter(v => /\d/.test(String(v ?? ''))); if (d.length && d.filter(v => AN_YEXP.test(String(v).trim())).length / d.length >= .8) map.siaf = map.anio; } /* celda «Año Exp.»: el expediente sale de la misma columna */
   return { hdr, map, sc: best.sc, H, ini }; }
 function anValidar(I) { const rows = I.sheets[I.si].rows, ini = I.ini ?? I.hdr + 1, data = rows.slice(ini, ini + 300), out = {}, glob = [];
   for (const f in I.map) if (!anCampos(I.k).some(c => c[0] === f)) I.map[f] = -1;
@@ -5316,7 +5317,11 @@ function anConciliar(k) { const D = S.sanSrcData?.[k]; if (!D) return []; const 
     const r = { sentido: 'Ambos sentidos (O/C + año)', anio: +anio, mesC: p.mes, mesP: mP.join(', '), oc: uniq([...p.ocRaw]).join(' / '), ocP: uniq(X.map(x => x.b.doc)).join(' / '), ocN, bienes: X.map(x => x.b.cod), ctaC: p.cta, ctaP: uniq(X.map(x => x.cta)).join(' / '), impC: p.imp / 100, impP: sumP / 100, dif: dif / 100, siaf: p.siaf, filas: p.filas, corr: [], obs: [] };
     if (dif !== 0) { r.estado = 'DIF_IMPORTE'; r.obs.push(`Importe ${T} S/ ${fmtN(p.imp / 100)} y valor patrimonial S/ ${fmtN(sumP / 100)}${X.length > 1 ? ` (suma de ${X.length} bienes)` : ''}: diferencia S/ ${fmtN(dif / 100)}. No se declara conciliado.`); }
     if (p.mes != null && !(mP.length === 1 && mP[0] === p.mes)) { r.obs.push(`Mes contable ${p.mes} y mes patrimonial ${mP.join(', ') || 'sin fecha'}: no se vincula automáticamente.`); if (!r.estado) r.estado = 'DIF_MES'; }
-    if (!r.estado) { if (!ctaDif.length) r.estado = 'CONCILIADO'; else { let pend = 0;
+    if (!r.estado) { if (!ctaDif.length) { const uit = S.cfg.uit || {}; let pend = 0; /* misma cuenta en ambas fuentes: se registra tal como está, salvo que la clase o el umbral exijan revisión */
+        for (const x of X) { const esp = V.get(x.b)?.esp, y = x.y; if (!isFinite(y) || uit[y] == null || uit[y] === '') { r.obs.push(`${x.b.cod}: UIT ${isFinite(y) ? y : ''} no configurada, no se evaluó el umbral.`); continue; }
+          if (esp?.motivo === 'CLASE') { pend++; r.obs.push(`${x.b.cod}: la cuenta ${x.cta} coincide en ambas fuentes, pero no corresponde a la clase del catálogo${esp.cta ? ` (esperada ${esp.cta})` : ''}: revisar.`); }
+          else if (esp?.motivo === 'UMBRAL') { pend++; r.obs.push(`${x.b.cod}: la cuenta ${x.cta} coincide en ambas fuentes, pero el valor unitario S/ ${fmtN(x.b.valor)} frente al umbral S/ ${fmtN(ENG.umbral(y, uit))} (${ENG.fraccion(y)} ${y}) sugiere revisar la clasificación; no se corrige automáticamente.`); } }
+        r.estado = pend ? 'CONC_PEND' : 'CONCILIADO'; } else { let pend = 0;
       for (const x of ctaDif) { const ev = anEvalCta(x, V); if (ev.ok) r.corr.push({ cod: x.b.cod, de: p.cta, a: x.cta, mot: `Cuenta ${T} ${p.cta || '(vacía)'} distinta de la cuenta del Registro patrimonial; ${ev.mot}.` }); else { pend++; r.obs.push(`${x.b.cod}: cuenta ${T} ${p.cta || '(vacía)'} ≠ patrimonial ${x.cta || '(vacía)'}; ${ev.mot}.`); } }
       r.estado = pend ? 'CONC_PEND' : 'CONC_CORR'; } }
     r.sustento = `O/C ${ocN} del ${anio}: ${X.length} bien(es) del Registro patrimonial y ${p.filas.length} fila(s) de ${T} (cuenta ${p.cta || 'sin cuenta'}${p.mes ? ', mes ' + p.mes : ''}). Importes comparados a 2 decimales.`;
@@ -5327,16 +5332,29 @@ function anConciliar(k) { const D = S.sanSrcData?.[k]; if (!D) return []; const 
     const PL = [...part.values()];
     if (!P.length) { PL.forEach(p => push({ sentido: `${T} → Registro patrimonial`, estado: 'SIN_PATRIMONIO', anio: +anio, mesC: p.mes, mesP: '', oc: [...p.ocRaw].join(' / '), ocP: '', ocN, bienes: [], ctaC: p.cta, ctaP: '', impC: p.imp / 100, impP: null, dif: null, siaf: p.siaf, filas: p.filas, corr: [], obs: [],
       sustento: `La O/C ${ocN} del ${anio} no tiene bienes con esa orden y año en el Registro patrimonial.` + (() => { const a = B.filter(x => x.oc?.n === ocN && x.y !== +anio).map(x => x.y); return a.length ? ` Hay bienes con O/C ${ocN} de ${uniq(a).join(', ')}: no se relacionan por ser de otro año.` : ''; })() })); continue; }
-    let grupos = null;
-    if (PL.length === 1) grupos = [{ p: PL[0], X: P }];
-    else { const asig = new Map(PL.map(p => [p, []])), amb = [];
-      for (const x of P) { let c = PL.filter(p => p.cta === x.cta && p.mes === x.m); if (c.length !== 1) { const cm = PL.filter(p => p.mes === x.m), cc = PL.filter(p => p.cta === x.cta); c = c.length > 1 ? [] : cm.length === 1 ? cm : cc.length === 1 ? cc : []; } if (c.length === 1) asig.get(c[0]).push(x); else amb.push(x); }
-      if (amb.length || [...asig.values()].some(a => !a.length)) { const sC = PL.reduce((a, p) => a + p.imp, 0), sP = P.reduce((a, x) => a + x.v, 0);
-        push({ sentido: 'Ambos sentidos (O/C + año)', estado: 'AMBIGUO', anio: +anio, mesC: uniq(PL.map(p => p.mes)).join(', '), mesP: uniq(P.map(x => x.m)).join(', '), oc: uniq(PL.flatMap(p => [...p.ocRaw])).join(' / '), ocP: uniq(P.map(x => x.b.doc)).join(' / '), ocN, bienes: P.map(x => x.b.cod), ctaC: uniq(PL.map(p => p.cta)).join(' / '), ctaP: uniq(P.map(x => x.cta)).join(' / '), impC: sC / 100, impP: sP / 100, dif: (sC - sP) / 100, siaf: uniq(PL.flatMap(p => p.siaf)), filas: PL.flatMap(p => p.filas), corr: [],
-          obs: [`La O/C tiene ${PL.length} partidas contables y no se puede determinar por mes, cuenta y documentos qué bienes corresponden a cada una${amb.length ? ` (${amb.length} bien(es) sin partida única)` : ''}${[...asig.values()].some(a => !a.length) ? '; hay partidas sin bienes asignables' : ''}. Revise manualmente; no se agrupa por importes.`],
-          sustento: `O/C ${ocN} del ${anio}: ${P.length} bien(es) y ${PL.length} partidas de ${T}.` }); P.forEach(x => usados.add(x.b)); continue; }
-      grupos = PL.map(p => ({ p, X: asig.get(p) })); }
-    grupos.forEach(({ p, X }) => evaluar(p, X, anio, ocN)); P.forEach(x => usados.add(x.b)); }
+    /* Agrupación por O/C + año + cuenta contable: los bienes (uno o varios) de la misma cuenta se suman y se comparan con el total
+       de esa cuenta en el reporte. Solo si no hay correspondencia exacta se evalúa una diferencia de cuenta (corrección). */
+    const tom = new Set(), suma = X => X.reduce((a, x) => a + x.v, 0), mayor = c => String(c || '').slice(0, 4);
+    const tomar = (p, X) => { X.forEach(x => tom.add(x.b)); evaluar(p, X, anio, ocN); };
+    let R = [];
+    for (const p of PL) { const X = P.filter(x => !tom.has(x.b) && x.cta === p.cta); if (X.length && suma(X) === p.imp) tomar(p, X); else R.push(p); }
+    const uno = (p, Q) => { const X = Q.filter(x => x.cta === p.cta), Q1 = Q.filter(x => mayor(x.cta) === mayor(p.cta));
+      if (Q.length && suma(Q) === p.imp) return tomar(p, Q);
+      if (Q1.length && suma(Q1) === p.imp) return tomar(p, Q1);
+      if (X.length) return tomar(p, X);
+      if (Q1.length) return tomar(p, Q1);
+      if (Q.length) return tomar(p, Q);
+      push({ sentido: `${T} → Registro patrimonial`, estado: 'SIN_PATRIMONIO', anio: +anio, mesC: p.mes, mesP: '', oc: [...p.ocRaw].join(' / '), ocP: uniq(P.map(x => x.b.doc)).join(' / '), ocN, bienes: [], ctaC: p.cta, ctaP: uniq(P.map(x => x.cta)).join(' / '), impC: p.imp / 100, impP: null, dif: null, siaf: p.siaf, filas: p.filas, corr: [], obs: [],
+        sustento: `La O/C ${ocN} del ${anio} tiene bienes en el Registro patrimonial, pero ninguno pendiente para la cuenta ${p.cta || '(sin cuenta)'} del reporte.` }); };
+    let Q = P.filter(x => !tom.has(x.b));
+    if (R.length > 1) { const R2 = []; for (const p of R) { const X = Q.filter(x => !tom.has(x.b) && x.cta === p.cta); if (X.length) tomar(p, X); else R2.push(p); } R = R2; Q = P.filter(x => !tom.has(x.b)); }
+    if (R.length === 1) uno(R[0], Q);
+    else if (R.length > 1 && Q.length) { const sC = R.reduce((a, p) => a + p.imp, 0), sP = suma(Q); Q.forEach(x => tom.add(x.b));
+      push({ sentido: 'Ambos sentidos (O/C + año)', estado: 'AMBIGUO', anio: +anio, mesC: uniq(R.map(p => p.mes)).join(', '), mesP: uniq(Q.map(x => x.m)).join(', '), oc: uniq(R.flatMap(p => [...p.ocRaw])).join(' / '), ocP: uniq(Q.map(x => x.b.doc)).join(' / '), ocN, bienes: Q.map(x => x.b.cod), ctaC: uniq(R.map(p => p.cta)).join(' / '), ctaP: uniq(Q.map(x => x.cta)).join(' / '), impC: sC / 100, impP: sP / 100, dif: (sC - sP) / 100, siaf: uniq(R.flatMap(p => p.siaf)), filas: R.flatMap(p => p.filas), corr: [],
+        obs: [`Quedan ${R.length} cuentas del reporte y ${Q.length} bien(es) cuyas cuentas no coinciden con ninguna: no se puede determinar con documentos qué bienes corresponden a cada cuenta. Revise manualmente; no se agrupa por importes.`],
+        sustento: `O/C ${ocN} del ${anio}: agrupación por cuenta contable sin correspondencia única.` }); }
+    else R.forEach(p => uno(p, []));
+    tom.forEach(b => usados.add(b)); }
   /* 2) Notas contables sin O/C: año + mes + cuenta, con evidencia documental */
   const toks = s => new Set(anH(s).split(' ').filter(w => w.length >= 4 && !/^\d+$/.test(w)));
   const notas = D.filas.filter(f => !f.ocN), pend = [];
@@ -5357,7 +5375,7 @@ function anConciliar(k) { const D = S.sanSrcData?.[k]; if (!D) return []; const 
   const sinC = new Map(); B.forEach(x => { if (usados.has(x.b)) return; if (x.oc && isFinite(x.y)) { const kk = x.y + '|' + x.oc.n; (sinC.get(kk) || sinC.set(kk, []).get(kk)).push(x); }
     else push({ sentido: `Registro patrimonial → ${T}`, estado: 'SIN_OC', anio: isFinite(x.y) ? x.y : '', mesC: '', mesP: x.m ?? '', oc: '', ocP: x.b.doc || '', ocN: '', bienes: [x.b.cod], ctaC: '', ctaP: x.cta, impC: null, impP: x.v / 100, dif: null, siaf: [], filas: [], corr: [], obs: [], sustento: `El documento de adquisición «${x.b.doc || 'vacío'}» no es una orden de compra; ${notas.length ? 'no se identificó una nota contable con evidencia suficiente' : 'no hay notas contables para buscar'}.` }); });
   for (const [kk, X] of sinC) { const [anio, n] = kk.split('|');
-    push({ sentido: `Registro patrimonial → ${T}`, estado: 'SIN_CONTABLE', anio: +anio, mesC: '', mesP: uniq(X.map(x => x.m)).join(', '), oc: '', ocP: uniq(X.map(x => x.b.doc)).join(' / '), ocN: n, bienes: X.map(x => x.b.cod), ctaC: '', ctaP: uniq(X.map(x => x.cta)).join(' / '), impC: null, impP: X.reduce((a, x) => a + x.v, 0) / 100, dif: null, siaf: [], filas: [], corr: [], obs: [], sustento: `La O/C ${n} del ${anio} no figura en ${T} para el mismo año.` + otros(n, anio) }); }
+    push({ sentido: `Registro patrimonial → ${T}`, estado: 'SIN_CONTABLE', anio: +anio, mesC: '', mesP: uniq(X.map(x => x.m)).join(', '), oc: '', ocP: uniq(X.map(x => x.b.doc)).join(' / '), ocN: n, bienes: X.map(x => x.b.cod), ctaC: '', ctaP: uniq(X.map(x => x.cta)).join(' / '), impC: null, impP: X.reduce((a, x) => a + x.v, 0) / 100, dif: null, siaf: [], filas: [], corr: [], obs: [], sustento: keyC.has(kk) ? `La O/C ${n} del ${anio} figura en ${T}, pero en otra(s) cuenta(s) (${uniq(keyC.get(kk).map(f => f.cta)).join(', ')}) que ya se conciliaron o no corresponden a estos bienes (cuenta patrimonial ${uniq(X.map(x => x.cta)).join(', ')}).` : `La O/C ${n} del ${anio} no figura en ${T} para el mismo año.` + otros(n, anio) }); }
   return res; }
 /* Campos del análisis que llenó un reporte (Eliminar no toca lo escrito a mano ni lo del otro reporte) */
 const AN_FIELDS = ['cv', 'cc', 'siaf', 'corr'];

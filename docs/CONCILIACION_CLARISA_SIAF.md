@@ -41,18 +41,17 @@ Reglas de lectura:
 
 ## 2. Cruce (ambos sentidos)
 
-- **Clave:** entidad + año de registro + N° de O/C.
-  - El N° se normaliza: sin prefijos (O/C, OC, N°, ORDEN DE COMPRA), sin espacios y sin ceros a la izquierda.
-  - El texto original se conserva.
-- **Nunca se relacionan años distintos.** Si la O/C existe en otro año, se informa.
-- **Del lado patrimonial:** el N° se toma de «Documento adquisición» (solo si es O/C) y el año y mes de la fecha de alta.
-- **Varias partidas en una misma O/C:** se agrupan por mes + cuenta.
-  - Cada bien se asigna a una partida por mes y cuenta.
-  - Si no hay asignación única, el resultado es **Agrupación ambigua**.
-  - Nunca se agrupa solo porque los importes sumen igual.
-  - Cada bien se usa una sola vez.
-- **Importes:** se comparan en céntimos (2 decimales). Si hay diferencia → **Diferencia de importe** (no conciliado).
-- **Mes:** si difiere → **Diferencia de mes** (observado; no se vincula).
+- **Clave:** entidad + año de registro + N° de O/C (normalizado: sin prefijos, espacios ni ceros a la izquierda; el texto original se conserva). Nunca se relacionan años distintos.
+- **Agrupación por O/C + cuenta contable:**
+  1. Para cada cuenta del reporte dentro de la O/C, se suman los bienes del Registro patrimonial de la misma O/C, año y cuenta (uno solo o varios).
+  2. Si la suma es igual al total del reporte en esa O/C y cuenta, la operación queda **Conciliada**.
+  3. Si además la clase del catálogo y el umbral UIT no exigen revisión, se registra en **Registro contable (valor y cuenta)** tal como está: el valor de cada bien y la misma cuenta.
+- **Diferencia de cuenta:** solo si no hay correspondencia exacta. Cuando queda una sola cuenta del reporte sin conciliar en esa O/C, se comparan los bienes restantes; si el importe coincide, se evalúa la corrección (punto 4).
+- **Sin coincidencia:**
+  - Los bienes de la O/C con otra cuenta (p. ej. 9105 cuando CLARISA es del grupo 15) quedan como «O/C no figura en el reporte», con la explicación.
+  - Si quedan varias cuentas sin correspondencia única, el resultado es **Agrupación ambigua**. Nunca se agrupa solo porque los importes sumen igual.
+- **Importes:** se comparan a 2 decimales. Si difieren → **Diferencia de importe** (no conciliado).
+- **Cada bien se usa una sola vez.**
 
 ## 3. Notas contables sin O/C
 
