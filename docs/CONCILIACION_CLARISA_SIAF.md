@@ -5,6 +5,17 @@ Todo trabaja sobre el inventario valorizado del saneamiento. No modifica el inve
 
 ## 1. Importación (Excel .xlsx/.xls o TXT/CSV)
 
+**CLARISA: solo se reconocen y concilian 5 columnas:**
+- **DEBE** (importe)
+- **Nro. Docum. Compromiso** (O/C)
+- **Cuenta contable**
+- **Año**
+- **Mes**
+
+Las demás columnas no se usan. Por eso CLARISA no llena la columna SIAF del análisis, y las notas sin O/C quedan pendientes de revisión.
+
+Si la cuenta viene como «Cuenta SubCta1 SubCta2 SubCta3» (1503 | 02 | 01 | 02), se compone 1503.020102. Las filas de totales («T O T A L», «INFORMACION AL…») se omiten.
+
 - **Detección automática:** se detecta la hoja y la fila de encabezados, y las columnas se reconocen por su encabezado.
 - **Referencias iniciales de CLARISA:** se aplican solo si el encabezado no identifica la columna y su contenido es válido.
   - T = DOC. COMPROMISO (O/C)

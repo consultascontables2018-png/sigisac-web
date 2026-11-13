@@ -5154,7 +5154,7 @@ function an1503Rows() { let n = 0; return S.inv.filter(b => b && !ENG.sinCodigo(
    6) SIAF: expedientes de las operaciones conciliadas.
    7) Estado separado por bien y matriz con trazabilidad hasta la fila y el archivo de origen.                     */
 const AN_SRC = [['clarisa', 'CLARISA', 'file-spreadsheet', '--c-cfg'], ['siaf', 'SIAF Landing', 'landmark', '--c-san']];
-const AN_REF = { clarisa: { oc: 19, cta: 4, anio: 6, siaf: 7 } }; /* referencias iniciales del Excel CLARISA: T, E, G, H */
+const AN_REF = { clarisa: { oc: 19, cta: 4, anio: 6 } }; /* referencias iniciales del Excel CLARISA: T, E, G (el mes por su encabezado) */
 const AN_CAMPOS = [
   ['oc', 'N° de orden de compra (DOC. COMPROMISO)', false, /DOC\w* COMPROMISO|ORDEN (DE )?COMPRA|^O C\b|^OC\b|^N\w* O C\b|NRO ORDEN|^COMPROMISO\b/, /SERVICIO/],
   ['anio', 'Año de registro', true, /^ANO\b|^ANIO\b|EJERCICIO|^PERIODO ANO|ANO (DE )?REG|ANO EJE|ANO CONTAB/, /MES/],
@@ -5167,6 +5167,15 @@ const AN_CAMPOS = [
   ['ent', 'Entidad / unidad ejecutora', false, /ENTIDAD|UNIDAD EJEC|^UE\b|SEC\w* EJEC|^RUC\b|^EJECUTORA/, null]
 ];
 const AN_C = Object.fromEntries(AN_CAMPOS.map(c => [c[0], c]));
+/* CLARISA: solo se reconocen y concilian DEBE, Nro. Docum. Compromiso, Cuenta contable, Año y Mes */
+const AN_CL = [
+  ['imp', 'DEBE', true, /^DEBE\b/, /HABER/],
+  ['oc', 'Nro. Docum. Compromiso', false, /DOCUM\w* COMPROMISO|DOC\w* COMPROMISO|^COMPROMISO\b/, null],
+  ['cta', 'Cuenta contable', true, /CUENTA|^CTA\b/, /DESCRIP|NOMBRE|DENOMINA|BANCARIA|CORRIENTE/],
+  ['anio', 'Año', true, /^ANO\b|^ANIO\b|EJERCICIO|ANO (DE )?REG|ANO EJE|ANO CONTAB/, /MES/],
+  ['mes', 'Mes', false, /^MES\b|MES (DE )?REG|MES CONTAB|MES EJE/, null]];
+const anCampos = k => k === 'clarisa' ? AN_CL : AN_CAMPOS;
+const anCdef = (k, f) => anCampos(k).find(c => c[0] === f) || AN_C[f];
 const AN_EST = {
   CONCILIADO: ['Conciliado', '--ok'], CONC_CORR: ['Conciliado · corrección propuesta', '--ok'], CONC_PEND: ['Conciliado · corrección pendiente', '--warn'],
   NOTA_OK: ['Conciliado por nota contable', '--ok'], DIF_IMPORTE: ['Diferencia de importe', '--bad'], DIF_MES: ['Diferencia de mes', '--warn'],
@@ -5217,38 +5226,40 @@ function anCheck(f, vals) { const ne = vals.filter(v => v != null && String(v).t
 function anDetect(rows, k, hdrF) {
   let best = { hdr: -1, sc: 0 };
   if (hdrF != null && hdrF >= -1) best = { hdr: hdrF, sc: 9 };
-  else for (let r = 0; r < Math.min(rows.length, 40); r++) { let sc = 0; (rows[r] || []).forEach(v => { const x = anH(v); if (x && x.length < 60 && AN_CAMPOS.some(c => anHdrOk(c, x))) sc++; }); if (sc > best.sc) best = { hdr: r, sc }; }
+  else for (let r = 0; r < Math.min(rows.length, 40); r++) { let sc = 0; (rows[r] || []).forEach(v => { const x = anH(v); if (x && x.length < 60 && anCampos(k).some(c => anHdrOk(c, x))) sc++; }); if (sc > best.sc) best = { hdr: r, sc }; }
   const hdr = best.sc >= 2 ? best.hdr : -1, H = hdr >= 0 ? (rows[hdr] || []).map(anH) : [], map = {};
   AN_CAMPOS.forEach(c => map[c[0]] = -1);
-  const ORD = ['oc', 'mes', 'anio', 'siaf', 'cta', 'imp', 'doc', 'desc', 'ent'];
-  H.forEach((x, i) => { if (!x) return; for (const f of ORD) if (map[f] < 0 && anHdrOk(AN_C[f], x)) { map[f] = i; break; } });
+  const ORD = ['oc', 'mes', 'anio', 'siaf', 'cta', 'imp', 'doc', 'desc', 'ent'].filter(f => anCampos(k).some(c => c[0] === f));
+  H.forEach((x, i) => { if (!x) return; for (const f of ORD) if (map[f] < 0 && anHdrOk(anCdef(k, f), x)) { map[f] = i; break; } });
   const data = rows.slice(hdr + 1, hdr + 301), usado = i => Object.values(map).includes(i);
-  const sv = S.sanMap?.[k]; if (sv) for (const f in sv) { const v = sv[f]; const i = typeof v === 'number' ? v : H.indexOf(v); if (i >= 0 && !usado(i) && anCheck(f, data.map(w => w?.[i])).lvl !== 'err') { map[f] = i; } }
+  const sv = S.sanMap?.[k]; if (sv) for (const f in sv) { if (!ORD.includes(f)) continue; const v = sv[f]; const i = typeof v === 'number' ? v : H.indexOf(v); if (i >= 0 && !usado(i) && anCheck(f, data.map(w => w?.[i])).lvl !== 'err') { map[f] = i; } }
   const ref = AN_REF[k] || {}; for (const f in ref) if (map[f] < 0 && !usado(ref[f]) && anCheck(f, data.map(w => w?.[ref[f]])).lvl !== 'err') map[f] = ref[f];
   return { hdr, map, sc: best.sc }; }
 function anValidar(I) { const rows = I.sheets[I.si].rows, data = rows.slice(I.hdr + 1, I.hdr + 301), out = {}, glob = [];
-  for (const [f, , req] of AN_CAMPOS) { const i = I.map[f]; out[f] = i < 0 ? (req ? { lvl: 'err', txt: 'Campo obligatorio: seleccione la columna' } : { lvl: 'off', txt: 'No se usará' }) : anCheck(f, data.map(w => w?.[i])); }
+  for (const f in I.map) if (!anCampos(I.k).some(c => c[0] === f)) I.map[f] = -1;
+  for (const [f, , req] of anCampos(I.k)) { const i = I.map[f]; out[f] = i < 0 ? (req ? { lvl: 'err', txt: 'Campo obligatorio: seleccione la columna' } : { lvl: 'off', txt: 'No se usará' }) : anCheck(f, data.map(w => w?.[i])); }
   const por = {}; for (const f in I.map) if (I.map[f] >= 0) (por[I.map[f]] = por[I.map[f]] || []).push(f);
   for (const c in por) if (por[c].length > 1) { const F = por[c], fechas = data.map(w => w?.[+c]).filter(v => v != null && v !== '');
     const okFecha = F.length === 2 && F.includes('anio') && F.includes('mes') && fechas.length && fechas.filter(anEsFecha).length / fechas.length >= .95;
-    if (!okFecha) { F.forEach(f => out[f] = { lvl: 'err', txt: `La columna ${anCol(+c)} también está asignada a ${F.filter(x => x !== f).map(x => AN_C[x][1]).join(', ')}` }); glob.push(`La columna ${anCol(+c)} está asignada a ${F.map(x => AN_C[x][1]).join(' y ')}: cada campo debe tener su propia columna.`); }
+    if (!okFecha) { F.forEach(f => out[f] = { lvl: 'err', txt: `La columna ${anCol(+c)} también está asignada a ${F.filter(x => x !== f).map(x => anCdef(I.k, x)[1]).join(', ')}` }); glob.push(`La columna ${anCol(+c)} está asignada a ${F.map(x => anCdef(I.k, x)[1]).join(' y ')}: cada campo debe tener su propia columna.`); }
     else F.forEach(f => out[f] = { lvl: 'ok', txt: `Columna de fechas verificada: ${f === 'anio' ? 'se toma el año' : 'se toma el mes'}` }); }
-  if (I.map.oc < 0) glob.push('Sin columna de O/C: todos los registros se buscarán como notas contables (año, mes y cuenta), con revisión.');
+  if (I.map.oc < 0) glob.push(I.k === 'clarisa' ? 'Sin columna Nro. Docum. Compromiso: todos los registros se buscarán como notas contables (año, mes y cuenta), con revisión.' : 'Sin columna de O/C: todos los registros se buscarán como notas contables (año, mes y cuenta), con revisión.');
   if (I.map.mes < 0) glob.push('Sin columna de mes: no se podrá comparar el mes ni conciliar notas contables.');
   const err = Object.values(out).some(x => x.lvl === 'err'); return { out, glob, err }; }
 /* Lee las filas con la equivalencia validada; conserva la fila original y registra los errores */
 function anLeerFilas(I) { const rows = I.sheets[I.si].rows, M = I.map, filas = [], errores = [], en = S.cfg.entidad || {};
+  { const Hh = I.hdr >= 0 ? rows[I.hdr] || [] : []; I.ctaSub = M.cta >= 0 && /SUBCTA|SUB CTA/.test(anH(Hh[M.cta]) + ' ' + anH(Hh[M.cta + 1])); } /* «Cuenta SubCta1 SubCta2 SubCta3»: se compone 1503 + subcuentas */
   const entOk = v => { const t = anH(v); if (!t) return true; const ue = String(en.ue || '').replace(/^0+/, ''), ruc = String(en.ruc || ''), nom = anH(en.nombre); const d = t.replace(/\D/g, '').replace(/^0+/, '');
     return (ue && (d === ue || t.includes(' ' + ue) || t.startsWith(ue + ' '))) || (ruc && t.includes(ruc)) || (nom && (t.includes(nom) || nom.includes(t))) || (!ue && !ruc && !nom); };
   const val = (w, f) => M[f] >= 0 ? w[M[f]] : null;
   for (let r = I.hdr + 1; r < rows.length; r++) { const w = rows[r] || [], fila = r + 1;
     const usadas = Object.values(M).filter(i => i >= 0); if (usadas.every(i => w[i] == null || String(w[i]).trim() === '')) continue;
-    const txt = w.slice(0, 8).map(anH).join(' '); const anio = anYear(val(w, 'anio'));
-    if (!isFinite(anio)) { if (!/TOTAL|SUBTOTAL|RESUMEN/.test(txt)) errores.push({ fila, motivo: `Año de registro inválido: «${String(val(w, 'anio') ?? '')}»` }); continue; }
+    const txt = w.slice(0, 8).map(anH).join(' '), txtJ = txt.replace(/\s+/g, ''); const anio = anYear(val(w, 'anio'));
+    if (!isFinite(anio)) { if (!/TOTAL|RESUMEN|INFORMACIONAL|SALDO|ACUMULADO/.test(txtJ)) errores.push({ fila, motivo: `Año de registro inválido: «${String(val(w, 'anio') ?? '')}»` }); continue; }
     const imp = anNum(val(w, 'imp')); if (!isFinite(imp)) { errores.push({ fila, motivo: `Importe inválido: «${String(val(w, 'imp') ?? '')}»` }); continue; }
     if (M.ent >= 0 && !entOk(val(w, 'ent'))) { errores.push({ fila, motivo: `Otra entidad: «${String(val(w, 'ent'))}» (no se incluye)` }); continue; }
     const mes = M.mes >= 0 ? anMes(val(w, 'mes')) : NaN; if (M.mes >= 0 && !isFinite(mes)) errores.push({ fila, motivo: `Mes inválido: «${String(val(w, 'mes') ?? '')}» (la fila se incluye sin mes)`, aviso: true });
-    const cta = anCta(val(w, 'cta')); if (!cta) errores.push({ fila, motivo: 'Fila sin cuenta contable (se incluye para el cruce por O/C)', aviso: true });
+    let cta = anCta(val(w, 'cta')); if (I.ctaSub && /^\d{4}$/.test(cta)) { const sub = [1, 2, 3].map(d => String(w[M.cta + d] ?? '').trim().replace(/\.0+$/, '')).filter(x => /^\d{1,4}$/.test(x)); if (sub.length) cta = cta + '.' + sub.map(x => x.padStart(2, '0')).join(''); } if (!cta) errores.push({ fila, motivo: 'Fila sin cuenta contable (se incluye para el cruce por O/C)', aviso: true });
     const ocRaw = M.oc >= 0 ? String(val(w, 'oc') ?? '').trim() : '', oc = anOC(ocRaw, true);
     if (oc?.y && oc.y !== anio) errores.push({ fila, motivo: `La O/C «${ocRaw}» indica el año ${oc.y} y la fila es del ${anio}: se usa el año de registro`, aviso: true });
     const siaf = M.siaf >= 0 ? String(val(w, 'siaf') ?? '').split(/[\/;,|]+/).map(x => x.trim().replace(/\.0+$/, '')).filter(Boolean) : [];
@@ -5356,7 +5367,7 @@ function anMapModal() { const I = VIEWS.analisis.imp; if (!I) return; const T = 
   modal(`Importar reporte ${T} · validar columnas`, `<div class="anmap">
     <p>Archivo <b>${h(I.nombre)}</b>${I.sheets.length > 1 ? ` · hoja <select class="anm-sel" data-anm="si">${I.sheets.map((s, i) => `<option value="${i}" ${i === I.si ? 'selected' : ''}>${h(s.name || 'Hoja ' + (i + 1))}</option>`).join('')}</select>` : ''} · fila de encabezados <input class="anm-in" data-anm="hdr" type="number" min="0" value="${I.hdr + 1}" title="0 = sin encabezados"> · ${fmtI(Math.max(0, rows.length - I.hdr - 1))} filas de datos</p>
     <div class="tbl-wrap"><table class="anm-t"><thead><tr><th>Campo</th><th>Columna del archivo</th><th>Muestra</th><th>Validación</th></tr></thead><tbody>
-    ${AN_CAMPOS.map(([f, t, req]) => `<tr><td><b>${h(t)}</b>${req ? ' <span class="req">*</span>' : ''}${ref[f] != null ? `<div class="muted">Referencia inicial: columna ${anCol(ref[f])}</div>` : ''}</td><td><select class="anm-sel" data-anm="${f}">${opts(I.map[f])}</select></td><td class="muted">${muestra(I.map[f])}</td><td><span class="badge" style="--k:var(${col[v.out[f].lvl]})">${h(v.out[f].txt)}</span></td></tr>`).join('')}</tbody></table></div>
+    ${anCampos(I.k).map(([f, t, req]) => `<tr><td><b>${h(t)}</b>${req ? ' <span class="req">*</span>' : ''}${ref[f] != null ? `<div class="muted">Referencia inicial: columna ${anCol(ref[f])}</div>` : ''}</td><td><select class="anm-sel" data-anm="${f}">${opts(I.map[f])}</select></td><td class="muted">${muestra(I.map[f])}</td><td><span class="badge" style="--k:var(${col[v.out[f].lvl]})">${h(v.out[f].txt)}</span></td></tr>`).join('')}</tbody></table></div>
     ${v.glob.length ? `<div class="alert" style="--k:var(${v.err ? '--bad' : '--warn'});margin-top:10px">${ic('info')}<div>${v.glob.map(h).join('<br>')}</div></div>` : ''}
     <label class="anm-rec"><input type="checkbox" data-anm="rec" ${I.rec ? 'checked' : ''}> Recordar esta equivalencia para el reporte ${h(T)}</label>
     <p class="muted" style="margin:6px 0 0">Se conserva la fila original de cada registro. Una carga nueva reemplaza la anterior de ${h(T)}; no modifica el inventario de los usuarios.</p></div>`,
@@ -5375,7 +5386,7 @@ function anConcCard() { const C = S.sanConc || {}, ks = AN_SRC.map(x => x[0]).fi
   const k = ks.includes(VIEWS.analisis.ctab) ? VIEWS.analisis.ctab : ks[0], D = S.sanSrcData[k], res = C[k].res, cnt = {}; res.forEach(r => cnt[r.estado] = (cnt[r.estado] || 0) + 1);
   const err = D.errores.filter(e => !e.aviso), av = D.errores.filter(e => e.aviso), conc = res.filter(r => AN_OK.has(r.estado));
   return card(`Conciliación ${anT(k)} – Registro patrimonial`, 'git-compare-arrows', `${ks.length > 1 ? `<div class="an-tabs">${ks.map(x => `<button class="mini ${x === k ? '' : 'ghost'}" data-anct="${x}">${h(anT(x))}</button>`).join('')}</div>` : ''}
-    <p class="muted" style="margin:0 0 10px">Archivo <b>${h(D.archivo)}</b>${D.hoja ? ` · hoja ${h(D.hoja)}` : ''} · encabezados en la fila ${D.hdr || '—'} · ${fmtI(D.filas.length)} filas procesadas · cruce del ${fmtD(C[k].fecha.slice(0, 10))}. Columnas: ${Object.entries(D.hdrs || {}).map(([f, t]) => `${h(AN_C[f]?.[1] || f)} = <b>${h(t)}</b>`).join('; ')}.</p>
+    <p class="muted" style="margin:0 0 10px">Archivo <b>${h(D.archivo)}</b>${D.hoja ? ` · hoja ${h(D.hoja)}` : ''} · encabezados en la fila ${D.hdr || '—'} · ${fmtI(D.filas.length)} filas procesadas · cruce del ${fmtD(C[k].fecha.slice(0, 10))}. Columnas: ${Object.entries(D.hdrs || {}).map(([f, t]) => `${h(anCdef(k, f)?.[1] || f)} = <b>${h(t)}</b>`).join('; ')}.</p>
     <div class="kpis">${kpi('Operaciones conciliadas', fmtI(conc.length), `S/ ${fmtN(conc.reduce((a, r) => a + (+r.impC || 0), 0))}`, '--ok')}${kpi('Corrección propuesta', fmtI(cnt.CONC_CORR || 0), 'cuenta del Registro patrimonial validada', '--c-san')}${kpi('Diferencias y pendientes', fmtI((cnt.DIF_IMPORTE || 0) + (cnt.DIF_MES || 0) + (cnt.AMBIGUO || 0) + (cnt.PENDIENTE || 0) + (cnt.CONC_PEND || 0)), 'requieren revisión', '--warn')}${kpi('Sin coincidencia', fmtI((cnt.SIN_PATRIMONIO || 0) + (cnt.SIN_CONTABLE || 0) + (cnt.SIN_OC || 0)), `${fmtI(cnt.SIN_PATRIMONIO || 0)} contables · ${fmtI((cnt.SIN_CONTABLE || 0) + (cnt.SIN_OC || 0))} patrimoniales`, '--muted')}</div>
     <div class="tbl-bar" style="margin-top:12px"><label class="input sm">${ic('filter')}<select id="anc-f"><option value="">Todos los estados (${fmtI(res.length)})</option>${Object.keys(AN_EST).filter(e => cnt[e]).map(e => `<option value="${e}" ${VIEWS.analisis.cf === e ? 'selected' : ''}>${h(AN_EST[e][0])} (${fmtI(cnt[e])})</option>`).join('')}</select></label><button class="mini" data-a="anReconc" data-k="${k}">${ic('refresh-cw')}Volver a conciliar</button></div>
     <div id="ancTbl"></div>
