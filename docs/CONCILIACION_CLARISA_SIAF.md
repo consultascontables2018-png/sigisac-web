@@ -122,4 +122,9 @@ Reglas de lectura:
   4. Si hay Debe/Haber o un indicador D/H, toma solo el Debe.
   5. Recorre la tabla por bloques y conserva solo los registros de la 1503, por año. Los registros eliminados no se toman.
   - Si algo no se puede identificar, se informa el motivo.
+- **Información del «Detalle de operaciones Grupo 15» (formato CLARISA), por ejercicio:**
+  - Columnas: cuenta y subcuentas, mes (00 APERTURA … 13 CIERRE), expediente, ciclo/fase (CC, GD), Debe, Haber, monto de la operación, tipo de operación, tipo de recurso, actividad/proyecto y secuencia funcional.
+  - También: documento y N° de compromiso (O/C), RUC, proveedor, fecha y documento del devengado, N° de documento, comprobantes de pago (C/P) y observación.
+  - Los datos que no están en la tabla contable se relacionan por año + expediente desde las tablas de documentos y comprobantes. El proveedor sale por RUC y el nombre del documento por su código. El nombre de las cuentas sale del maestro de cuentas de la data.
+- **Reporte Excel/PDF:** sigue la estructura ejercicio → 1503 → subcuentas → mes → operaciones, con Debe y Haber por nivel y total general.
 - **Solo se procesa; no se concilia.** Data SIAF Web es la lectura y el reporte de la cuenta 1503 por año, en Excel o PDF.
