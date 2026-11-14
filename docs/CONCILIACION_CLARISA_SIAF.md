@@ -113,7 +113,11 @@ Reglas de lectura:
 - **Reporte por cuenta contable (Excel y PDF):** formato similar al Detalle de operaciones de CLARISA.
   - Estructura: cuenta → año y mes → registros, con subtotal por mes, total por cuenta y total general.
   - Columnas: N°, año, mes, N° SIAF, cuenta contable, nota contable, N° de orden de compra y valor del registro.
-- **Solo cuenta mayor 1503:** de la data SIAF se leen únicamente la cuenta 1503 y sus subcuentas, por año. Las demás cuentas mayores no se leen; se informa cuántos registros se omitieron.
-- **Conciliación a pedido:** al cargar la data no se concilia.
-  1. Primero se revisa la data en **Excel o Vista PDF**.
-  2. Recién entonces se habilita el botón **Conciliar con Registro patrimonial**, que aplica las mismas reglas que CLARISA.
+- **Reconocimiento automático (sin ventana de columnas):** al elegir la carpeta, el sistema localiza solo la tabla DBF que contiene la cuenta mayor 1503.
+  1. Lee la estructura de todas las tablas.
+  2. De las que tienen año e importe, toma muestras del inicio, medio y final, y busca cuentas 1503… (o MAYOR = 1503 con sus campos de subcuenta). Prioriza las tablas contables: ctb_*, diario, operacion contable.
+  3. Asigna año, mes, expediente, nota, O/C e importe por el nombre del campo.
+  4. Si hay Debe/Haber o un indicador D/H, toma solo el Debe.
+  5. Recorre la tabla por bloques y conserva solo los registros de la 1503, por año. Los registros eliminados no se toman.
+  - Si algo no se puede identificar, se informa el motivo.
+- **Solo se procesa; no se concilia.** Data SIAF Web es la lectura y el reporte de la cuenta 1503 por año, en Excel o PDF.
