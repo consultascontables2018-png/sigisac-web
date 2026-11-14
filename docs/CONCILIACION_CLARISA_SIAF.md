@@ -130,4 +130,7 @@ Reglas de lectura:
   - Estructura: CUENTA (1503 · 1503.01 · 1503.0101) → SUB CUENTA (cuenta de las operaciones) → mes en la columna AÑO (00 APERTURA … 13 CIERRE) → operaciones.
   - Columnas: AÑO, SIAF, C, N, Debe, Haber, Monto Oper., Tp. Op., Tp. Rec., Act. Proy., Sec. Func., Docum. Compromiso, Nro. Docum. Compromiso, Nro RUC, Proveedor, Fecha Docum., Documento y Nro. Docum.
   - Cada nivel trae Debe y Haber, y el reporte cierra con el total general.
+  - **Letra tamaño 12** en todas las columnas. En PDF se usa una hoja A1 horizontal para que entren las 20 columnas; para imprimir en A4, ajuste a página.
+- **Selección de la tabla:** se prefieren las tablas de detalle que tienen **EXPEDIENTE** y la cuenta 1503; en ellas se recorre todo el campo de cuenta. Solo de esas tablas salen SIAF, RUC, proveedor y fecha (relacionados por año + expediente). Una tabla resumen sin expediente es el último recurso y se avisa.
+- El panel indica de qué tabla y campos salió cada dato.
 - **Solo se procesa; no se concilia.** Data SIAF Web es la lectura y el reporte de la cuenta 1503 por año, en Excel o PDF.
