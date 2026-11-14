@@ -1,4 +1,4 @@
-# Análisis 1503 · Conciliación con CLARISA y Data SIAF Web
+# Análisis 1503 · Conciliación con CLARISA
 
 Ubicación: Saneamiento contable 1503 › Análisis › botones **Reporte CLARISA** y **Data SIAF Web**.
 Todo trabaja sobre el inventario valorizado del saneamiento. No modifica el inventario de los usuarios ni los archivos fuente.
@@ -95,47 +95,6 @@ Reglas de lectura:
   - filas de origen, archivo y sustento.
 - **Eliminar** quita el reporte, su matriz y los datos que llenó. Conserva lo escrito a mano y lo del otro reporte.
 
-## 6. Data SIAF Web (antes «Reporte SIAF Landing»)
+## 6. Data SIAF Web
 
-- **Importación:** el botón **Data SIAF Web** selecciona la **carpeta** de datos del SIAF (p. ej. «Data_siaf_UE821_26102026»). Se leen todos sus archivos: tablas DBF (Visual FoxPro/dBase), TXT/CSV, Excel y ZIP.
-  - De cada DBF se lee primero la estructura y se procesan las tablas con campos contables (año, mes, expediente, cuenta, nota, O/C, importe).
-  - Las demás tablas y archivos (índices .CDX, tablas de personal, etc.) se informan como no aplicables.
-  - Los registros marcados como eliminados en el DBF no se toman.
-- **Desplegables «Cuenta contable» y «Año»** junto al botón Data SIAF Web (reemplazan al antiguo botón «Archivo»):
-  - Se llenan solos con las cuentas y los años reconocidos al cargar la data SIAF.
-  - Las cuentas incluyen las cuentas mayores (p. ej. 1503 con todas sus subcuentas).
-  - Filtran la tabla, los reportes Excel/PDF y el resumen de **operaciones por año** (cantidad y valor por año, con filtro por clic).
-  - **Enlazados:** al cambiar el **Año**, el desplegable **Cuenta contable** muestra solo las cuentas con registros en ese año. Si la cuenta elegida no tiene registros en el año nuevo, vuelve a «todas».
-  - A continuación del Año están los botones **Vista PDF** y **Excel**, que generan el reporte de la cuenta y el año seleccionados. No hay conexión directa con el SIAF: no existe una interfaz oficial autorizada y el sistema no usa credenciales.
-- **Columnas que se reconocen por su encabezado:** año, mes, N° SIAF (expediente), cuenta contable, nota contable, N° de orden de compra y valor del registro.
-- **Solo registros válidos:** deben tener año, mes (1–12), cuenta contable y valor distinto de cero.
-  - Se omiten apertura (00), cierre (13), anulados y extornos.
-  - Las filas con año, mes o cuenta inválidos se informan como error.
-- **Desplegable de cuentas contables:** permite elegir todas las cuentas, una cuenta mayor (p. ej. 1503 con todas sus subcuentas) o una subcuenta.
-- **Reporte por cuenta contable (Excel y PDF):** formato similar al Detalle de operaciones de CLARISA.
-  - Estructura: cuenta → año y mes → registros, con subtotal por mes, total por cuenta y total general.
-  - Columnas: N°, año, mes, N° SIAF, cuenta contable, nota contable, N° de orden de compra y valor del registro.
-- **Reconocimiento automático (sin ventana de columnas):** al elegir la carpeta, el sistema localiza solo la tabla DBF que contiene la cuenta mayor 1503.
-  1. Lee la estructura de todas las tablas.
-  2. De las que tienen año e importe, toma muestras del inicio, medio y final, y busca cuentas 1503… (o MAYOR = 1503 con sus campos de subcuenta). Prioriza las tablas contables: ctb_*, diario, operacion contable.
-  3. Asigna año, mes, expediente, nota, O/C e importe por el nombre del campo.
-  4. Si hay Debe/Haber o un indicador D/H, toma solo el Debe.
-  5. Recorre la tabla por bloques y conserva solo los registros de la 1503, por año. Los registros eliminados no se toman.
-  - Si algo no se puede identificar, se informa el motivo.
-- **Información del «Detalle de operaciones Grupo 15» (formato CLARISA), por ejercicio:**
-  - Columnas: cuenta y subcuentas, mes (00 APERTURA … 13 CIERRE), expediente, ciclo/fase (CC, GD), Debe, Haber, monto de la operación, tipo de operación, tipo de recurso, actividad/proyecto y secuencia funcional.
-  - También: documento y N° de compromiso (O/C), RUC, proveedor, fecha y documento del devengado, N° de documento, comprobantes de pago (C/P) y observación.
-  - Los datos que no están en la tabla contable se relacionan por año + expediente desde las tablas de documentos y comprobantes. El proveedor sale por RUC y el nombre del documento por su código. El nombre de las cuentas sale del maestro de cuentas de la data.
-- **Reporte Excel/PDF «DETALLE DE OPERACIONES GRUPO 15 Activos Fijos»** (Grupo 15 · Cuenta 1503), por ejercicio.
-  - Estructura: CUENTA (1503 · 1503.01 · 1503.0101) → SUB CUENTA (cuenta de las operaciones) → mes en la columna AÑO (00 APERTURA … 13 CIERRE) → operaciones.
-  - Columnas: AÑO, SIAF, C, N, Debe, Haber, Monto Oper., Tp. Op., Tp. Rec., Act. Proy., Sec. Func., Docum. Compromiso, Nro. Docum. Compromiso, Nro RUC, Proveedor, Fecha Docum., Documento y Nro. Docum.
-  - Cada nivel trae Debe y Haber, y el reporte cierra con el total general.
-  - **Letra tamaño 12** en todas las columnas. En PDF se usa una hoja A1 horizontal para que entren las 20 columnas; para imprimir en A4, ajuste a página.
-- **Selección de la tabla:** se prefieren las tablas de detalle que tienen **EXPEDIENTE** y la cuenta 1503; en ellas se recorre todo el campo de cuenta. Solo de esas tablas salen SIAF, RUC, proveedor y fecha (relacionados por año + expediente). Una tabla resumen sin expediente es el último recurso y se avisa.
-- El panel indica de qué tabla y campos salió cada dato.
-- **Orden de compra en la misma fila de la compra:** para cada registro contable (por ejemplo GD, devengado) se buscan los documentos del mismo año + expediente.
-  - El documento de compromiso es el que el maestro de documentos nombra «ORDEN DE COMPRA», o el de la fase C. Se muestra «O/C.» y su número en Docum. Compromiso y Nro. Docum. Compromiso.
-  - Una orden de servicio se muestra como «O/S.».
-  - El documento del devengado (FACTURA, BOLETA…), su número y su fecha van a Documento, Nro. Docum. y Fecha Docum.
-- Columnas añadidas al final: **Nro. C/P** y **Observación**.
-- **Solo se procesa; no se concilia.** Data SIAF Web es la lectura y el reporte de la cuenta 1503 por año, en Excel o PDF.
+**Retirada (14/11/2026).** A pedido del usuario se quitaron del Análisis las opciones Data SIAF Web, Cuenta contable, Año, Vista PDF, Excel y Eliminar asociadas. Los datos SIAF que se hubieran cargado se eliminan al abrir el Análisis. Queda solo el Reporte CLARISA.
