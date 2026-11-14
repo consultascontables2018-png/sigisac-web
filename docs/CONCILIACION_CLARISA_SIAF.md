@@ -101,7 +101,10 @@ Reglas de lectura:
   - De cada DBF se lee primero la estructura y se procesan las tablas con campos contables (año, mes, expediente, cuenta, nota, O/C, importe).
   - Las demás tablas y archivos (índices .CDX, tablas de personal, etc.) se informan como no aplicables.
   - Los registros marcados como eliminados en el DBF no se toman.
-  - El botón **Archivo** permite elegir un solo archivo (DBF, ZIP, Excel o TXT). No hay conexión directa con el SIAF: no existe una interfaz oficial autorizada y el sistema no usa credenciales.
+- **Desplegables «Cuenta contable» y «Año»** junto al botón Data SIAF Web (reemplazan al antiguo botón «Archivo»):
+  - Se llenan solos con las cuentas y los años reconocidos al cargar la data SIAF.
+  - Las cuentas incluyen las cuentas mayores (p. ej. 1503 con todas sus subcuentas).
+  - Filtran la tabla, los reportes Excel/PDF y el resumen de **operaciones por año** (cantidad y valor por año, con filtro por clic). No hay conexión directa con el SIAF: no existe una interfaz oficial autorizada y el sistema no usa credenciales.
 - **Columnas que se reconocen por su encabezado:** año, mes, N° SIAF (expediente), cuenta contable, nota contable, N° de orden de compra y valor del registro.
 - **Solo registros válidos:** deben tener año, mes (1–12), cuenta contable y valor distinto de cero.
   - Se omiten apertura (00), cierre (13), anulados y extornos.
