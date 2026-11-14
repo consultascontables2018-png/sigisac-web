@@ -113,4 +113,7 @@ Reglas de lectura:
 - **Reporte por cuenta contable (Excel y PDF):** formato similar al Detalle de operaciones de CLARISA.
   - Estructura: cuenta → año y mes → registros, con subtotal por mes, total por cuenta y total general.
   - Columnas: N°, año, mes, N° SIAF, cuenta contable, nota contable, N° de orden de compra y valor del registro.
-- **Conciliación:** los registros también se cruzan con el Registro patrimonial con las mismas reglas que CLARISA.
+- **Solo cuenta mayor 1503:** de la data SIAF se leen únicamente la cuenta 1503 y sus subcuentas, por año. Las demás cuentas mayores no se leen; se informa cuántos registros se omitieron.
+- **Conciliación a pedido:** al cargar la data no se concilia.
+  1. Primero se revisa la data en **Excel o Vista PDF**.
+  2. Recién entonces se habilita el botón **Conciliar con Registro patrimonial**, que aplica las mismas reglas que CLARISA.
