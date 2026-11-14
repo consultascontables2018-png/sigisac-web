@@ -5304,7 +5304,7 @@ function anLeerFilas(I) { const rows = I.sheets[I.si].rows, M = I.map, filas = [
     if (oc?.y && oc.y !== anio) errores.push({ fila, motivo: `La O/C «${ocRaw}» indica el año ${oc.y} y la fila es del ${anio}: se usa el año de registro`, aviso: true });
     const siaf = M.siaf >= 0 ? String(val(w, 'siaf') ?? '').split(/[\/;,|]+/).map(x => anExp(x)).filter(Boolean) : [];
     filas.push({ fila, anio, mes: isFinite(mes) ? mes : null, cta, imp: Math.round(imp * 100) / 100, ocRaw: [tdoc, ocRaw].filter(Boolean).join(' '), ocN: oc?.n || '', siaf, nota: String(val(w, 'nota') ?? '').trim().replace(/\.0+$/, ''), doc: String(val(w, 'doc') ?? val(w, 'nota') ?? '').trim(), desc: String(val(w, 'desc') ?? '').trim(), ent: String(val(w, 'ent') ?? '').trim(),
-      raw: w.slice(0, Math.max(30, Math.max(...usadas) + 1)).map(v => v == null ? '' : String(v).slice(0, 120)) }); }
+      raw: (SW ? usadas.map(i => w[i]) : w.slice(0, Math.max(30, Math.max(...usadas) + 1))).map(v => v == null ? '' : String(v).slice(0, 120)) }); }
   if (omit.APERTURA || omit.CIERRE) errores.push({ fila: '—', motivo: `${fmtI((omit.APERTURA || 0) + (omit.CIERRE || 0))} fila(s) de APERTURA o CIERRE omitidas: son saldos, no operaciones del ejercicio`, aviso: true });
   if (omit.anul) errores.push({ fila: '—', motivo: `${fmtI(omit.anul)} registro(s) anulados o extornados omitidos (no son válidos)`, aviso: true });
   if (omit.cero) errores.push({ fila: '—', motivo: `${fmtI(omit.cero)} registro(s) sin valor omitidos`, aviso: true });
@@ -5413,13 +5413,51 @@ function anAplicar(k, res) { anLimpiar(k); const idx = new Map(sanArr().map(b =>
       else if ((r.estado === 'DIF_IMPORTE' || r.estado === 'DIF_MES') && unoAuno && r.filas.length) { set(b, 'cv', Math.round(r.impC * 100) / 100); if (r.ctaC) set(b, 'cc', r.ctaC); } } }
   return { ok, cons }; }
 /* ---- Importación: lectura, equivalencia de columnas y validación previa ---- */
-async function anSrcLeer(k, f) { const T = anT(k);
-  try { toast(`Leyendo reporte ${T}: ${f.name}…`, 'info'); const sheets = (await IMP.readFile(f)).filter(s => (s.rows || []).length);
+/* ---- Data SIAF Web: carpeta de datos del SIAF (p. ej. «Data_siaf_UE821_26102026») ----
+   Se leen todos los archivos de la carpeta: tablas DBF (Visual FoxPro / dBase), TXT/CSV, Excel y ZIP. De las tablas DBF se lee
+   primero solo la estructura y se procesan las que tienen campos contables (año, mes, expediente, cuenta, nota, O/C, importe).
+   Los registros marcados como eliminados en el DBF no se toman. */
+const SW_EXT = /\.(dbf|xlsx|xlsm|xls|csv|txt|tsv|prn|zip)$/i;
+function dbfLeer(buf, soloHdr) { const u8 = new Uint8Array(buf), dv = new DataView(u8.buffer, u8.byteOffset, u8.byteLength);
+  if (u8.length < 32 || ![0x02, 0x03, 0x04, 0x05, 0x30, 0x31, 0x32, 0x43, 0x63, 0x83, 0x8B, 0x8E, 0xCB, 0xF5, 0xFB].includes(u8[0])) throw new Error('No es una tabla DBF');
+  const n = dv.getUint32(4, true), hl = dv.getUint16(8, true), rl = dv.getUint16(10, true), F = []; let off = 1;
+  for (let o = 32; o + 32 <= Math.min(hl, u8.length) && u8[o] !== 0x0D; o += 32) { let name = ''; for (let i = 0; i < 11 && u8[o + i]; i++) name += String.fromCharCode(u8[o + i]);
+    const f = { name: name.trim(), t: String.fromCharCode(u8[o + 11]), len: u8[o + 16], dec: u8[o + 17], off }; F.push(f); off += f.len; }
+  if (soloHdr) return { F, n };
+  const td = new TextDecoder('windows-1252'), rows = [F.map(f => f.name)];
+  for (let r = 0; r < n; r++) { const p = hl + r * rl; if (p + rl > u8.length) break; if (u8[p] === 0x2A) continue; /* registro eliminado */
+    rows.push(F.map(f => { const a = p + f.off, b = a + f.len;
+      switch (f.t) { case 'N': case 'F': { const t = td.decode(u8.subarray(a, b)).trim(); return t === '' ? null : +t; }
+        case 'D': { const t = td.decode(u8.subarray(a, b)).trim(); return /^\d{8}$/.test(t) ? `${t.slice(0, 4)}-${t.slice(4, 6)}-${t.slice(6, 8)}` : null; }
+        case 'I': return dv.getInt32(a, true); case 'B': return dv.getFloat64(a, true); case 'Y': return Number(dv.getBigInt64(a, true)) / 10000;
+        case 'L': return /[TtYy]/.test(String.fromCharCode(u8[a])) ? 'T' : 'F'; case 'M': case 'G': case 'W': case 'P': case 'T': case '0': return null;
+        default: return td.decode(u8.subarray(a, b)).replace(/\0/g, '').trim(); } })); }
+  return { F, n, rows }; }
+const swScore = names => { const H = names.map(anH); let sc = 0; ['anio', 'mes', 'siaf', 'cta', 'nota', 'oc', 'imp'].forEach(f => { if (H.some(x => x && anHdrOk(anCdef('siaf', f), x))) sc += ['anio', 'cta', 'imp'].includes(f) ? 2 : 1; }); return sc; };
+async function swLeerArchivos(files) { const sheets = [], tablas = []; let nOtros = 0;
+  const add = (name, rows) => { if (rows && rows.length > 1) sheets.push({ name, rows }); };
+  const leerTabla = async (nm, blob) => { try { const H = dbfLeer(await blob.slice(0, 131072).arrayBuffer(), true); tablas.push({ nm, blob, n: H.n, sc: swScore(H.F.map(x => x.name)) }); } catch (e) { nOtros++; } };
+  const leerPlano = async (nm, blob) => { try { (await IMP.readFile(blob)).forEach(s => add(s.name && s.name !== blob.name ? `${nm} › ${s.name}` : nm, s.rows)); } catch (e) { nOtros++; } };
+  for (const f of files) { const nm = f.webkitRelativePath || f.name; if (!SW_EXT.test(f.name)) { nOtros++; continue; }
+    if (/\.dbf$/i.test(f.name)) { await leerTabla(nm, f); continue; }
+    if (/\.zip$/i.test(f.name)) { let z; try { z = await LIB.unzip(await f.arrayBuffer()); } catch (e) { nOtros++; continue; }
+      for (const [en, u8] of Object.entries(z)) { if (!u8 || !SW_EXT.test(en) || /\.zip$/i.test(en)) continue; const b = new File([u8], en.split('/').pop()); if (/\.dbf$/i.test(en)) await leerTabla(`${nm} › ${en}`, b); else await leerPlano(`${nm} › ${en}`, b); } continue; }
+    await leerPlano(nm, f); }
+  tablas.sort((a, b) => b.sc - a.sc || b.n - a.n);
+  const usar = tablas.filter(t => t.sc >= 4).slice(0, 6); if (!usar.length && tablas.length) usar.push(tablas[0]);
+  for (const t of usar) { toast(`Leyendo tabla ${t.nm.split('/').pop()} (${fmtI(t.n)} registros)…`, 'info'); const r = dbfLeer(await t.blob.arrayBuffer()); add(`${t.nm.split('/').pop()} · ${fmtI(r.rows.length - 1)} reg.`, r.rows); }
+  return { sheets, tablas, usar, nOtros }; }
+async function anSrcLeer(k, fs) { const T = anT(k), lista = Array.isArray(fs) ? fs : [fs], f = lista[0];
+  const carpeta = lista.length > 1 || /\.(dbf|zip)$/i.test(f.name), nomC = carpeta ? ((f.webkitRelativePath || '').split('/')[0] || f.name) : f.name;
+  try { toast(`Leyendo ${carpeta ? 'carpeta' : 'reporte'} ${T}: ${nomC}…`, 'info'); let info = '';
+    let sheets; if (carpeta) { const L = await swLeerArchivos(lista); sheets = L.sheets; info = `Carpeta <b>${h(nomC)}</b>: ${fmtI(lista.length)} archivo(s), ${fmtI(L.tablas.length)} tabla(s) DBF${L.usar.length ? ` (se leyeron ${L.usar.map(t => h(t.nm.split('/').pop())).join(', ')})` : ''}${L.nOtros ? `, ${fmtI(L.nOtros)} archivo(s) no aplicables` : ''}.`;
+      if (!sheets.length) throw new Error(`No se encontraron datos contables en la carpeta ${nomC}: ${L.tablas.length ? 'las tablas DBF no tienen campos de año, cuenta e importe' : 'no hay tablas DBF, TXT, CSV ni Excel'}.`); }
+    else sheets = (await IMP.readFile(f)).filter(s => (s.rows || []).length);
     if (!sheets.length) throw new Error('El archivo no tiene datos.');
     let si = 0, det = null; sheets.forEach((s, i) => { const d = anDetect(s.rows, k); const sc = d.sc + Object.values(d.map).filter(x => x >= 0).length; if (!det || sc > det.score) { det = { ...d, score: sc }; si = i; } });
-    const I = { k, nombre: f.name, size: f.size, sheets, si, hdr: det.hdr, map: det.map, H: det.H, ini: det.ini, rec: true, hash: anHash(sheets.map(s => s.rows)) };
+    const I = { k, nombre: nomC, size: lista.reduce((a, x) => a + (x.size || 0), 0), info, sheets, si, hdr: det.hdr, map: det.map, H: det.H, ini: det.ini, rec: true, hash: carpeta ? anHash(lista.map(x => [x.webkitRelativePath || x.name, x.size, x.lastModified])) : anHash(sheets.map(s => s.rows)) };
     VIEWS.analisis.imp = I;
-    const prev = S.sanSrcData?.[k]; if (prev && prev.hash === I.hash) return modal(`Reporte ${T} ya cargado`, `<p>El archivo <b>${h(f.name)}</b> es el mismo que se cargó el ${fmtD(prev.fecha.slice(0, 10))} (${fmtI(prev.filas.length)} filas). No se duplican registros.</p><p class="muted">Puede volver a ejecutar el cruce con los datos actuales del inventario valorizado y de la tabla UIT.</p>`,
+    const prev = S.sanSrcData?.[k]; if (prev && prev.hash === I.hash) return modal(`Reporte ${T} ya cargado`, `<p>${carpeta ? 'La carpeta' : 'El archivo'} <b>${h(nomC)}</b> es ${carpeta ? 'la misma' : 'el mismo'} que se cargó el ${fmtD(prev.fecha.slice(0, 10))} (${fmtI(prev.filas.length)} filas). No se duplican registros.</p><p class="muted">Puede volver a ejecutar el cruce con los datos actuales del inventario valorizado y de la tabla UIT.</p>`,
       `<button class="mini ghost" data-a="anImpCancel">${ic('x')}Cancelar</button><button class="mini" data-a="anReconc" data-k="${k}">${ic('refresh-cw')}Volver a conciliar</button>`, { tone: 'info', icon: 'copy' });
     anMapModal(); } catch (e) { console.error(e); toast(e.message, 'bad', 8000); } }
 function anMapModal() { const I = VIEWS.analisis.imp; if (!I) return; const T = anT(I.k), rows = I.sheets[I.si].rows, H = I.H || (I.hdr >= 0 ? rows[I.hdr] || [] : []), ini = I.ini ?? I.hdr + 1, v = anValidar(I);
@@ -5429,7 +5467,7 @@ function anMapModal() { const I = VIEWS.analisis.imp; if (!I) return; const T = 
     return rows.slice(ini).filter(w => w && ok(w[i])).slice(0, 3).map(w => h(String(tf ? tf(w[i]) : w[i]).slice(0, 18))).join(' · '); };
   const col = { ok: '--ok', warn: '--warn', err: '--bad', off: '--muted' }, ref = AN_REF[I.k] || {};
   modal(`Importar reporte ${T} · validar columnas`, `<div class="anmap">
-    <p>Archivo <b>${h(I.nombre)}</b>${I.sheets.length > 1 ? ` · hoja <select class="anm-sel" data-anm="si">${I.sheets.map((s, i) => `<option value="${i}" ${i === I.si ? 'selected' : ''}>${h(s.name || 'Hoja ' + (i + 1))}</option>`).join('')}</select>` : ''} · fila de encabezados <input class="anm-in" data-anm="hdr" type="number" min="0" value="${I.hdr + 1}" title="0 = sin encabezados"> · ${fmtI(Math.max(0, rows.length - ini))} filas de datos</p>
+    ${I.info ? `<p>${I.info}</p>` : ''}<p>${I.info ? 'Tabla' : 'Archivo <b>' + h(I.nombre) + '</b>'}${I.sheets.length > 1 ? ` · hoja <select class="anm-sel" data-anm="si">${I.sheets.map((s, i) => `<option value="${i}" ${i === I.si ? 'selected' : ''}>${h(s.name || 'Hoja ' + (i + 1))}</option>`).join('')}</select>` : ''} · fila de encabezados <input class="anm-in" data-anm="hdr" type="number" min="0" value="${I.hdr + 1}" title="0 = sin encabezados"> · ${fmtI(Math.max(0, rows.length - ini))} filas de datos</p>
     <div class="tbl-wrap"><table class="anm-t"><thead><tr><th>Campo</th><th>Columna del archivo</th><th>Muestra</th><th>Validación</th></tr></thead><tbody>
     ${anCampos(I.k).map(([f, t, req]) => `<tr><td><b>${h(t)}</b>${req ? ' <span class="req">*</span>' : ''}${ref[f] != null && (I.map[f] < 0 || I.map[f] === ref[f]) ? `<div class="muted">Referencia inicial: columna ${anCol(ref[f])}</div>` : ''}</td><td><select class="anm-sel" data-anm="${f}">${opts(I.map[f])}</select></td><td class="muted">${muestra(I.map[f], f)}</td><td><span class="badge" style="--k:var(${col[v.out[f].lvl]})">${h(v.out[f].txt)}</span></td></tr>`).join('')}</tbody></table></div>
     ${v.glob.length ? `<div class="alert" style="--k:var(${v.err ? '--bad' : '--warn'});margin-top:10px">${ic('info')}<div>${v.glob.map(h).join('<br>')}</div></div>` : ''}
@@ -5491,7 +5529,7 @@ VIEWS.analisis = { pag: 0, q: '', render(el) {
   const m = M('analisis'), R = an1503Rows(), tPv = R.reduce((a, x) => a + x.pv, 0), tCv = R.reduce((a, x) => a + (+x.cv || 0), 0), nCorr = R.filter(x => x.corr).length;
   el.innerHTML = `<div style="--c:var(${m.c});display:grid;gap:18px">
   <div class="kpis">${kpi('Bienes analizados', fmtI(R.length), 'del inventario valorizado importado', '--c-san')}${kpi('Registro patrimonial', money(tPv))}${kpi('Registro contable', money(tCv))}${kpi('Registrados en contable', fmtI(R.filter(x => x.cv !== '').length), `de ${fmtI(R.length)} bienes`)}${kpi('Con corrección de cuenta', fmtI(nCorr), 'anotadas por el analista', nCorr ? '--warn' : '--ok')}</div>
-  ${card('Análisis de la cuenta contable 1503', 'chart-bar-big', R.length ? `<div class="tbl-bar"><label class="input sm">${ic('search')}<input type="search" id="an-q" placeholder="Buscar código, denominación, cuenta…" value="${h(VIEWS.analisis.q)}"></label><span class="muted" id="an-n"></span><span class="an-src">${AN_SRC.map(([k, t, i, c]) => `<span class="an-sg"><label class="mini" style="--c:var(${c});cursor:pointer" title="Importe el reporte ${h(t)} (Excel o TXT): valida las columnas y concilia con el Registro patrimonial por O/C y año">${ic(i)}${k === 'siaf' ? '' : 'Reporte '}${h(t)}<input type="file" data-ansrc="${k}" hidden accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv,.prn"></label><button class="mini an-del" style="--c:var(--bad)" data-a="anSrcDel" data-k="${k}" ${anSrcN(k) || S.sanSrcData?.[k] ? '' : 'disabled'} title="${S.sanSrcData?.[k] ? `Eliminar el reporte ${h(t)} cargado (${h(S.sanSrcData[k].archivo)})` : `No hay datos importados del reporte ${h(t)}`}">${ic('trash-2')}Eliminar</button></span>`).join('')}</span></div><div id="anTbl"></div>` : `<div class="alert" style="--k:var(--warn)">${ic('info')}<div>Aún no hay inventario valorizado. Impórtelo en <b>Procesar reporte patrimonial › Importar invent. valorizado › Cargar</b>: el análisis se arma solo.</div></div>`, '', R.length ? exportBar('analisis1503') : '')}${anConcCard()}${swCard()}</div>`;
+  ${card('Análisis de la cuenta contable 1503', 'chart-bar-big', R.length ? `<div class="tbl-bar"><label class="input sm">${ic('search')}<input type="search" id="an-q" placeholder="Buscar código, denominación, cuenta…" value="${h(VIEWS.analisis.q)}"></label><span class="muted" id="an-n"></span><span class="an-src">${AN_SRC.map(([k, t, i, c]) => `<span class="an-sg"><label class="mini" style="--c:var(${c});cursor:pointer" title="${k === 'siaf' ? 'Seleccione la carpeta de la data SIAF (p. ej. Data_siaf_UE821_…): se leen sus tablas DBF, TXT, Excel o ZIP' : `Importe el reporte ${h(t)} (Excel o TXT): valida las columnas y concilia con el Registro patrimonial por O/C y año`}">${ic(i)}${k === 'siaf' ? '' : 'Reporte '}${h(t)}${k === 'siaf' ? `<input type="file" data-ansrc="${k}" hidden webkitdirectory directory multiple>` : `<input type="file" data-ansrc="${k}" hidden accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv,.prn">`}</label>${k === 'siaf' ? `<label class="mini" style="--c:var(${c});cursor:pointer" title="Seleccionar un solo archivo (DBF, ZIP, Excel o TXT) en lugar de la carpeta">${ic('file-text')}Archivo<input type="file" data-ansrc="${k}" hidden accept=".dbf,.zip,.xlsx,.xlsm,.xls,.csv,.txt,.tsv,.prn"></label>` : ''}<button class="mini an-del" style="--c:var(--bad)" data-a="anSrcDel" data-k="${k}" ${anSrcN(k) || S.sanSrcData?.[k] ? '' : 'disabled'} title="${S.sanSrcData?.[k] ? `Eliminar el reporte ${h(t)} cargado (${h(S.sanSrcData[k].archivo)})` : `No hay datos importados del reporte ${h(t)}`}">${ic('trash-2')}Eliminar</button></span>`).join('')}</span></div><div id="anTbl"></div>` : `<div class="alert" style="--k:var(--warn)">${ic('info')}<div>Aún no hay inventario valorizado. Impórtelo en <b>Procesar reporte patrimonial › Importar invent. valorizado › Cargar</b>: el análisis se arma solo.</div></div>`, '', R.length ? exportBar('analisis1503') : '')}${anConcCard()}${swCard()}</div>`;
   if (!R.length) return;
   const draw = () => { const R = an1503Rows(), q = ENG.norm(VIEWS.analisis.q || ''), L = q ? R.filter(x => ENG.norm([x.b.cod, x.b.den, x.b.marca, x.b.modelo, x.b.serie, x.pc, x.cc, x.corr, x.siaf].join(' ')).includes(q)) : R;
     const PS = 50, pages = Math.max(1, Math.ceil(L.length / PS)); VIEWS.analisis.pag = Math.min(VIEWS.analisis.pag, pages - 1); const pg = VIEWS.analisis.pag, sl = L.slice(pg * PS, pg * PS + PS);
@@ -5506,7 +5544,7 @@ VIEWS.analisis = { pag: 0, q: '', render(el) {
   draw(); anConcDraw(); swDraw();
   $('#an-q').oninput = e => { VIEWS.analisis.q = e.target.value; VIEWS.analisis.pag = 0; draw(); };
   el.onclick = e => { const ct = e.target.closest('[data-anct]'); if (ct) { VIEWS.analisis.ctab = ct.dataset.anct; VIEWS.analisis.cf = ''; return refresh(); } const b = e.target.closest('[data-anp]'); if (b && !b.disabled) { VIEWS.analisis.pag = +b.dataset.anp; draw(); } };
-  el.onchange = e => { if (e.target.id === 'sw-cta') { VIEWS.analisis.swc = e.target.value; return refresh(); } if (e.target.id === 'anc-f') { VIEWS.analisis.cf = e.target.value; return anConcDraw(); } const fi = e.target.closest('[data-ansrc]'); if (fi) { const f = fi.files?.[0], k = fi.dataset.ansrc; fi.value = ''; if (f) anSrcLeer(k, f); return; }
+  el.onchange = e => { if (e.target.id === 'sw-cta') { VIEWS.analisis.swc = e.target.value; return refresh(); } if (e.target.id === 'anc-f') { VIEWS.analisis.cf = e.target.value; return anConcDraw(); } const fi = e.target.closest('[data-ansrc]'); if (fi) { const L = [...(fi.files || [])], k = fi.dataset.ansrc; fi.value = ''; if (L.length) anSrcLeer(k, fi.hasAttribute('webkitdirectory') || L.length > 1 ? L : L[0]); return; }
     const t = e.target.closest('.an-in'); if (!t) return; const b = S.inv.find(x => String(x.cod) === t.dataset.an); if (!b) return; const k = t.dataset.k; b.an = b.an || {};
     if (k === 'cv') { const tx = String(t.value).replace(/,/g, '').trim(); if (tx === '') { b.an.cv = ''; } else { const v = parseFloat(tx); if (!isFinite(v)) { toast('Ingrese un valor numérico', 'warn'); t.value = b.an.cv === '' || b.an.cv == null ? '' : fmtN(b.an.cv); return; } b.an.cv = Math.round(v * 100) / 100; t.value = fmtN(b.an.cv); } }
     else b.an[k] = t.value.trim().toUpperCase();

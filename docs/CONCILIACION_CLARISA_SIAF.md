@@ -97,7 +97,11 @@ Reglas de lectura:
 
 ## 6. Data SIAF Web (antes «Reporte SIAF Landing»)
 
-- **Importación:** el archivo exportado del módulo contable del SIAF Web (Excel o TXT). No hay conexión directa con el SIAF: no existe una interfaz oficial autorizada y el sistema no usa credenciales.
+- **Importación:** el botón **Data SIAF Web** selecciona la **carpeta** de datos del SIAF (p. ej. «Data_siaf_UE821_26102026»). Se leen todos sus archivos: tablas DBF (Visual FoxPro/dBase), TXT/CSV, Excel y ZIP.
+  - De cada DBF se lee primero la estructura y se procesan las tablas con campos contables (año, mes, expediente, cuenta, nota, O/C, importe).
+  - Las demás tablas y archivos (índices .CDX, tablas de personal, etc.) se informan como no aplicables.
+  - Los registros marcados como eliminados en el DBF no se toman.
+  - El botón **Archivo** permite elegir un solo archivo (DBF, ZIP, Excel o TXT). No hay conexión directa con el SIAF: no existe una interfaz oficial autorizada y el sistema no usa credenciales.
 - **Columnas que se reconocen por su encabezado:** año, mes, N° SIAF (expediente), cuenta contable, nota contable, N° de orden de compra y valor del registro.
 - **Solo registros válidos:** deben tener año, mes (1–12), cuenta contable y valor distinto de cero.
   - Se omiten apertura (00), cierre (13), anulados y extornos.
