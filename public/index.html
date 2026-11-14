@@ -5543,7 +5543,8 @@ async function swAuto(files, avance) { const tablas = []; let nOtros = 0;
   for (const t of rel) { if (!E.size) break; avance?.(`Relacionando ${t.nm}…`); const F = t.H.F, q = re => F.find(x => re.test(x.name.toUpperCase()) && x.t !== 'M') || null;
     const qa = q(SW_N.anio), qe = q(SW_N.siaf), qf = q(DET.fase), qs = {}; for (const k in DET) qs[k] = q(DET[k]); let hits = 0;
     await dbfRecorrer(t.f, t.H, 0, t.H.n, (u8, dv, td, p) => { const g = x => x ? dbfVal(u8, dv, td, p + x.off, x) : null, key = K(g(qa), g(qe)); if (!E.has(key)) return; hits++;
-      const fase = String(g(qf) ?? '').trim().toUpperCase() || '_', o = info.get(key) || info.set(key, { C: {}, D: {}, G: { cp: [] }, _: {} }).get(key), d = fase === 'C' ? o.C : fase === 'D' ? o.D : fase === 'G' ? o.G : o._;
+      const fase = String(g(qf) ?? '').trim().toUpperCase() || '_', o = info.get(key) || info.set(key, { C: {}, D: {}, G: { cp: [] }, _: {}, docs: [] }).get(key), d = fase === 'C' ? o.C : fase === 'D' ? o.D : fase === 'G' ? o.G : o._;
+      { const cod = g(qs.codDoc), num = g(qs.numDoc); if (num != null && String(num).trim() !== '') { const dd = { fase, cod: cod == null ? '' : String(cod).trim(), num: String(num).trim(), fec: g(qs.fecDoc), ruc: g(qs.ruc) }; if (!o.docs.some(x => x.fase === dd.fase && x.cod === dd.cod && x.num === dd.num)) o.docs.push(dd); } }
       for (const k of ['est', 'tpop', 'tprec', 'actp', 'secf', 'ruc', 'codDoc', 'numDoc', 'fecDoc', 'obs']) { const v = g(qs[k]); if (v != null && String(v).trim() !== '' && d[k] == null) d[k] = typeof v === 'string' ? v.trim() : v; }
       const cp = g(qs.cp); if (cp != null && String(cp).trim() && !o.G.cp.includes(String(cp).trim())) o.G.cp.push(String(cp).trim()); });
     if (hits) usados.push(`${t.nm} (${fmtI(hits)})`); }
@@ -5560,8 +5561,13 @@ async function swAuto(files, avance) { const tablas = []; let nOtros = 0;
     if (!qc || !qn) continue; await dbfRecorrer(t.f, t.H, 0, t.H.n, (u8, dv, td, p) => { const d = String(dbfVal(u8, dv, td, p + qc.off, qc) ?? '').replace(/\D/g, ''); if (/^1503/.test(d)) { const k = d.length <= 4 ? d : d.slice(0, 4) + '.' + d.slice(4); if (!ctaNom[k]) ctaNom[k] = String(dbfVal(u8, dv, td, p + qn.off, qn) ?? '').trim(); } }); }
   for (const f of filas) { const o = info.get(K(f.anio, f.siaf[0])); if (o) { const D = o.D, C = o.C, X = o._, pick2 = k => f[k] !== '' && f[k] != null ? f[k] : (D[k] ?? X[k] ?? C[k] ?? '');
       f.est = pick2('est'); f.tpop = pick2('tpop'); f.tprec = pick2('tprec'); f.actp = pick2('actp'); f.secf = pick2('secf'); f.ruc = pick2('ruc'); f.obs = f.obs || D.obs || X.obs || C.obs || '';
-      if (!f.doc && (D.codDoc != null || X.codDoc != null)) f.doc = D.codDoc ?? X.codDoc; if (!f.ndoc) f.ndoc = D.numDoc ?? X.numDoc ?? ''; if (!f.fdoc) f.fdoc = D.fecDoc ?? X.fecDoc ?? '';
-      if (C.numDoc != null) { f.dcomp = dn(C.codDoc) || f.dcomp; f.ndcomp = C.numDoc; const oc = anOC(String(C.numDoc), true); if (oc && /O\s*[\/.]?\s*C|COMPRA/.test(anNN(f.dcomp)) || (oc && !f.ocN)) { f.ocN = f.ocN || oc.n; f.ocRaw = f.ocRaw || String(C.numDoc); } }
+      /* documento de compromiso (orden de compra) en la misma fila del registro contable de la compra, y documento del devengado */
+      const nomD = d => anNN(dn(d.cod) + ' ' + d.cod), esOCd = d => /ORDEN\s+DE\s+COMPRA|\bO\s*[\/.]\s*C\b|^OC\b/.test(nomD(d)), esOSd = d => /SERVICIO|\bO\s*[\/.]\s*S\b/.test(nomD(d));
+      const comp = o.docs.find(esOCd) || o.docs.find(d => d.fase === 'C' && !esOSd(d)) || o.docs.find(esOSd) || (C.numDoc != null ? { cod: C.codDoc ?? '', num: String(C.numDoc), fase: 'C' } : null);
+      const dev = o.docs.find(d => d !== comp && d.fase === 'D' && !esOCd(d) && !esOSd(d)) || o.docs.find(d => d !== comp && /FACTURA|BOLETA|RECIBO|TICKET|LIQUIDAC|COMPROBANTE/.test(nomD(d))) || o.docs.find(d => d !== comp && d.fase !== 'C' && !esOCd(d) && !esOSd(d));
+      if (comp) { const nm = dn(comp.cod); f.dcomp = esOCd(comp) ? 'O/C.' : esOSd(comp) ? 'O/S.' : (nm || 'O/C.'); f.ndcomp = comp.num; const oc = f.dcomp === 'O/C.' ? anOC(comp.num, true) : null; if (oc) { f.ocN = oc.n; f.ocRaw = comp.num; } if (!f.ruc && comp.ruc) f.ruc = String(comp.ruc).trim(); }
+      if (dev) { if (!f.doc) f.doc = dev.cod; if (!f.ndoc) f.ndoc = dev.num; if (!f.fdoc && dev.fec) f.fdoc = dev.fec; if (!f.ruc && dev.ruc) f.ruc = String(dev.ruc).trim(); }
+      else { if (!f.doc && (D.codDoc != null || X.codDoc != null)) f.doc = D.codDoc ?? X.codDoc; if (!f.ndoc) f.ndoc = D.numDoc ?? X.numDoc ?? ''; if (!f.fdoc) f.fdoc = D.fecDoc ?? X.fecDoc ?? ''; }
       if (o.G.cp.length) f.cp = 'C/P. ' + o.G.cp.join(','); }
     f.doc = dn(f.doc); f.prov = provM.get(String(f.ruc).trim()) || ''; }
   return { tabla: mejor.nm, filas, leidos, nTablas: tablas.length, nOtros, rel: usados, ctaNom, diag, sinExp: !mejor.exp, campos: { anio: fA?.name, mes: fM?.name, siaf: fS?.name, cta: mejor.campo.name + (mejor.sub.length ? ' + ' + mejor.sub.map(x => x.name).join(' + ') : ''), nota: fN?.name, oc: fO?.name, imp: fI?.name + (fDH ? ` (D/H: ${fDH.name})` : fH ? ` / ${fH.name}` : '') } }; }
@@ -5650,7 +5656,7 @@ function swDraw() { const el = $('#swTbl'); if (!el) return; const F = swFilas(V
     { h: 'Debe', fn: f => mon(f.debe ?? f.imp), a: 'r', sv: f => f.debe ?? f.imp }, { h: 'Haber', fn: f => mon(f.haber), a: 'r', sv: f => f.haber || 0 }, { h: 'Monto oper.', fn: f => fmtN(f.monto ?? f.imp), a: 'r', sv: f => f.monto ?? f.imp },
     { h: 'Tp. Op.', fn: f => f.tpop || '', a: 'c' }, { h: 'Tp. Rec.', fn: f => f.tprec || '', a: 'c' }, { h: 'Act. Proy.', fn: f => f.actp || '' }, { h: 'Sec. Func.', fn: f => f.secf || '', a: 'c' },
     { h: 'Docum. compromiso', fn: f => f.dcomp || '' }, { h: 'Nro. docum. compromiso', fn: f => f.ndcomp || f.ocRaw || '' }, { h: 'Nro RUC', fn: f => f.ruc || '' }, { h: 'Proveedor', fn: f => f.prov || '' },
-    { h: 'Fecha docum.', fn: f => f.fdoc ? fmtD(f.fdoc) : '' }, { h: 'Documento', fn: f => f.doc || '' }, { h: 'Nro. docum.', fn: f => f.ndoc || '' }] }); }
+    { h: 'Fecha docum.', fn: f => f.fdoc ? fmtD(f.fdoc) : '' }, { h: 'Documento', fn: f => f.doc || '' }, { h: 'Nro. docum.', fn: f => f.ndoc || '' }, { h: 'Nro. C/P', fn: f => f.cp || '' }, { h: 'Observación', html: true, fn: f => `<div class="an-sus">${h(f.obs || '')}</div>`, txt: f => f.obs || '' }] }); }
 function anConcCard() { const C = S.sanConc || {}, ks = AN_SRC.map(x => x[0]).filter(k => k !== 'siaf' && C[k] && S.sanSrcData?.[k]); if (!ks.length) return '';
   const k = ks.includes(VIEWS.analisis.ctab) ? VIEWS.analisis.ctab : ks[0], D = S.sanSrcData[k], res = C[k].res, cnt = {}; res.forEach(r => cnt[r.estado] = (cnt[r.estado] || 0) + 1);
   const err = D.errores.filter(e => !e.aviso), av = D.errores.filter(e => e.aviso), conc = res.filter(r => AN_OK.has(r.estado));
@@ -6224,7 +6230,7 @@ SAN_REPS.push('concFuente');
 REP.REPORTS.siafCta = arg => { const [c, y] = String(arg || '').split('|'), D = S.sanSrcData?.siaf, F = swFilas(c || '', y || '');
   /* «DETALLE DE OPERACIONES GRUPO 15 Activos Fijos»: CUENTA (1503 · 1503.01 · 1503.0101) → SUB CUENTA (cuenta de las operaciones)
      → mes (00 APERTURA … 13 CIERRE) en la columna AÑO → operaciones (año, SIAF, C, N, Debe, Haber, Monto Oper., …), por ejercicio */
-  const N = 20, v2 = x => Math.round(x * 100) / 100, sum = (L, k) => v2(L.reduce((a, f) => a + anC2(f[k]) / 100, 0));
+  const N = 22, v2 = x => Math.round(x * 100) / 100, sum = (L, k) => v2(L.reduce((a, f) => a + anC2(f[k]) / 100, 0));
   const dig = c => String(c).replace(/\D/g, ''), fmtC = d => d.length <= 4 ? d : d.slice(0, 4) + '.' + d.slice(4);
   const nomC = d => D?.ctaNom?.[fmtC(d)] || ENG.PLANMAP[fmtC(d)]?.[1] || '';
   const fila = (set) => { const r = Array(N).fill(''); set.forEach(([i, v]) => r[i] = v); return r; };
@@ -6241,7 +6247,7 @@ REP.REPORTS.siafCta = arg => { const [c, y] = String(arg || '').split('|'), D = 
         for (let k = 0; k < G.length;) { const m = G[k].mes; let q = k; while (q < G.length && G[q].mes === m) q++; const M = G.slice(k, q);
           out.push({ style: 'sub', cells: fila([[2, swMes(m)], [6, sum(M, 'debe') || ''], [7, sum(M, 'haber') || ''], [8, sum(M, 'monto')]]) });
           M.forEach(f => out.push(fila([[2, String(f.anio)], [3, f.siaf.join(' / ')], [4, f.tipo || ''], [5, f.est || ''], [6, f.debe || ''], [7, f.haber || ''], [8, f.monto], [9, f.tpop], [10, f.tprec], [11, f.actp], [12, f.secf],
-            [13, f.dcomp || ''], [14, f.ndcomp || f.ocRaw || ''], [15, f.ruc], [16, f.prov], [17, f.fdoc ? fmtD(f.fdoc) : ''], [18, f.doc || ''], [19, f.ndoc || '']])));
+            [13, f.dcomp || ''], [14, f.ndcomp || f.ocRaw || ''], [15, f.ruc], [16, f.prov], [17, f.fdoc ? fmtD(f.fdoc) : ''], [18, f.doc || ''], [19, f.ndoc || ''], [20, f.cp || ''], [21, f.obs || '']])));
           k = q; }
         i = j; } }
     return out; };
@@ -6249,8 +6255,8 @@ REP.REPORTS.siafCta = arg => { const [c, y] = String(arg || '').split('|'), D = 
     sub: `Grupo: 15 Activos Fijos · Cuenta: ${c && c !== '1503' ? `${c} ${nomC(dig(c))}`.trim() : `1503 ${nomC('1503') || 'VEHICULOS, MAQUINARIAS Y OTROS'}`}${y ? ' · Ejercicio ' + y : ''}${D ? ` · Data SIAF: ${D.archivo}` : ''}`, sheet: 'Detalle',
     cols: [{ h: 'CUENTA', wx: 48, pw: 15 }, { h: 'SUB CUENTA', wx: 46, pw: 14 }, { h: 'AÑO', wx: 16, pw: 6.5 }, { h: 'SIAF', wx: 16, pw: 7 }, { h: 'C', x: 'c', wx: 5, pw: 2.5 }, { h: 'N', x: 'c', wx: 4, pw: 2 },
       { h: 'DEBE', x: 'num', wx: 18, pw: 8.5 }, { h: 'HABER', x: 'num', wx: 18, pw: 8.5 }, { h: 'MONTO OPER.', x: 'num', wx: 18, pw: 8.5 }, { h: 'TP. OP.', x: 'c', wx: 8, pw: 3.2 }, { h: 'TP. REC.', x: 'c', wx: 7, pw: 3 }, { h: 'ACT. PROY.', wx: 10, pw: 4 }, { h: 'SEC. FUNC.', x: 'c', wx: 7, pw: 3 },
-      { h: 'DOCUM. COMPROMISO', wx: 12, pw: 4.5 }, { h: 'NRO. DOCUM. COMPROMISO', wx: 12, pw: 5 }, { h: 'NRO RUC', wx: 13, pw: 5.5 }, { h: 'PROVEEDOR', wx: 36, pw: 12 }, { h: 'FECHA DOCUM.', x: 'c', wx: 14, pw: 6 }, { h: 'DOCUMENTO', wx: 14, pw: 6 }, { h: 'NRO. DOCUM.', wx: 18, pw: 7 }],
-    rows, totals: () => fila([[0, 'TOTAL GENERAL'], [6, sum(F, 'debe')], [7, sum(F, 'haber')], [8, sum(F, 'monto')]]), noFormula: true, size: 12, fs12: true, page: { W: 2384, H: 1684 } }; }; /* letra 12: hoja A1 horizontal para que entren las 20 columnas */
+      { h: 'DOCUM. COMPROMISO', wx: 12, pw: 4.5 }, { h: 'NRO. DOCUM. COMPROMISO', wx: 12, pw: 5 }, { h: 'NRO RUC', wx: 13, pw: 5.5 }, { h: 'PROVEEDOR', wx: 36, pw: 12 }, { h: 'FECHA DOCUM.', x: 'c', wx: 14, pw: 6 }, { h: 'DOCUMENTO', wx: 14, pw: 6 }, { h: 'NRO. DOCUM.', wx: 18, pw: 7 }, { h: 'NRO. C/P', wx: 24, pw: 8 }, { h: 'OBSERVACIÓN', wx: 60, pw: 18 }],
+    rows, totals: () => fila([[0, 'TOTAL GENERAL'], [6, sum(F, 'debe')], [7, sum(F, 'haber')], [8, sum(F, 'monto')]]), noFormula: true, size: 12, fs12: true, page: { W: 2900, H: 2050 } }; }; /* letra 12: hoja A1 horizontal para que entren las 20 columnas */
 SAN_REPS.push('siafCta');
 { const _e = REP.exportar; REP.exportar = (...a) => SAN_VIEWS.has(CUR) || SAN_REPS.includes(a[0]) ? withSan(() => _e(...a)) : _e(...a); }
 

@@ -133,4 +133,9 @@ Reglas de lectura:
   - **Letra tamaño 12** en todas las columnas. En PDF se usa una hoja A1 horizontal para que entren las 20 columnas; para imprimir en A4, ajuste a página.
 - **Selección de la tabla:** se prefieren las tablas de detalle que tienen **EXPEDIENTE** y la cuenta 1503; en ellas se recorre todo el campo de cuenta. Solo de esas tablas salen SIAF, RUC, proveedor y fecha (relacionados por año + expediente). Una tabla resumen sin expediente es el último recurso y se avisa.
 - El panel indica de qué tabla y campos salió cada dato.
+- **Orden de compra en la misma fila de la compra:** para cada registro contable (por ejemplo GD, devengado) se buscan los documentos del mismo año + expediente.
+  - El documento de compromiso es el que el maestro de documentos nombra «ORDEN DE COMPRA», o el de la fase C. Se muestra «O/C.» y su número en Docum. Compromiso y Nro. Docum. Compromiso.
+  - Una orden de servicio se muestra como «O/S.».
+  - El documento del devengado (FACTURA, BOLETA…), su número y su fecha van a Documento, Nro. Docum. y Fecha Docum.
+- Columnas añadidas al final: **Nro. C/P** y **Observación**.
 - **Solo se procesa; no se concilia.** Data SIAF Web es la lectura y el reporte de la cuenta 1503 por año, en Excel o PDF.
