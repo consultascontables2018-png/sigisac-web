@@ -126,5 +126,8 @@ Reglas de lectura:
   - Columnas: cuenta y subcuentas, mes (00 APERTURA … 13 CIERRE), expediente, ciclo/fase (CC, GD), Debe, Haber, monto de la operación, tipo de operación, tipo de recurso, actividad/proyecto y secuencia funcional.
   - También: documento y N° de compromiso (O/C), RUC, proveedor, fecha y documento del devengado, N° de documento, comprobantes de pago (C/P) y observación.
   - Los datos que no están en la tabla contable se relacionan por año + expediente desde las tablas de documentos y comprobantes. El proveedor sale por RUC y el nombre del documento por su código. El nombre de las cuentas sale del maestro de cuentas de la data.
-- **Reporte Excel/PDF:** sigue la estructura ejercicio → 1503 → subcuentas → mes → operaciones, con Debe y Haber por nivel y total general.
+- **Reporte Excel/PDF «DETALLE DE OPERACIONES GRUPO 15 Activos Fijos»** (Grupo 15 · Cuenta 1503), por ejercicio.
+  - Estructura: CUENTA (1503 · 1503.01 · 1503.0101) → SUB CUENTA (cuenta de las operaciones) → mes en la columna AÑO (00 APERTURA … 13 CIERRE) → operaciones.
+  - Columnas: AÑO, SIAF, C, N, Debe, Haber, Monto Oper., Tp. Op., Tp. Rec., Act. Proy., Sec. Func., Docum. Compromiso, Nro. Docum. Compromiso, Nro RUC, Proveedor, Fecha Docum., Documento y Nro. Docum.
+  - Cada nivel trae Debe y Haber, y el reporte cierra con el total general.
 - **Solo se procesa; no se concilia.** Data SIAF Web es la lectura y el reporte de la cuenta 1503 por año, en Excel o PDF.
