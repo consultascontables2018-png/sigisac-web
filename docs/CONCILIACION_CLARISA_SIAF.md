@@ -1,6 +1,6 @@
-# Análisis 1503 · Conciliación con CLARISA y SIAF Landing
+# Análisis 1503 · Conciliación con CLARISA y Data SIAF Web
 
-Ubicación: Saneamiento contable 1503 › Análisis › botones **Reporte CLARISA** y **Reporte SIAF Landing**.
+Ubicación: Saneamiento contable 1503 › Análisis › botones **Reporte CLARISA** y **Data SIAF Web**.
 Todo trabaja sobre el inventario valorizado del saneamiento. No modifica el inventario de los usuarios ni los archivos fuente.
 
 ## 1. Importación (Excel .xlsx/.xls o TXT/CSV)
@@ -94,3 +94,16 @@ Reglas de lectura:
   - corrección propuesta, SIAF;
   - filas de origen, archivo y sustento.
 - **Eliminar** quita el reporte, su matriz y los datos que llenó. Conserva lo escrito a mano y lo del otro reporte.
+
+## 6. Data SIAF Web (antes «Reporte SIAF Landing»)
+
+- **Importación:** el archivo exportado del módulo contable del SIAF Web (Excel o TXT). No hay conexión directa con el SIAF: no existe una interfaz oficial autorizada y el sistema no usa credenciales.
+- **Columnas que se reconocen por su encabezado:** año, mes, N° SIAF (expediente), cuenta contable, nota contable, N° de orden de compra y valor del registro.
+- **Solo registros válidos:** deben tener año, mes (1–12), cuenta contable y valor distinto de cero.
+  - Se omiten apertura (00), cierre (13), anulados y extornos.
+  - Las filas con año, mes o cuenta inválidos se informan como error.
+- **Desplegable de cuentas contables:** permite elegir todas las cuentas, una cuenta mayor (p. ej. 1503 con todas sus subcuentas) o una subcuenta.
+- **Reporte por cuenta contable (Excel y PDF):** formato similar al Detalle de operaciones de CLARISA.
+  - Estructura: cuenta → año y mes → registros, con subtotal por mes, total por cuenta y total general.
+  - Columnas: N°, año, mes, N° SIAF, cuenta contable, nota contable, N° de orden de compra y valor del registro.
+- **Conciliación:** los registros también se cruzan con el Registro patrimonial con las mismas reglas que CLARISA.

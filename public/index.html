@@ -5138,7 +5138,7 @@ function autoCorrForce() { const a = S.cfg.autoCorr; S.cfg.autoCorr = true; cons
 function an1503Rows() { let n = 0; return S.inv.filter(b => b && !ENG.sinCodigo(b.cod)).map(b => { const a = b.an || {}, pc = String(b.cta || '');
   /* del inventario valorizado se registra solo hasta REGISTRO PATRIMONIAL (valor y cuenta); lo demás lo completa el analista */
   return { b, n: ++n, pv: +b.valor || 0, pc, cv: a.cv != null && a.cv !== '' ? +a.cv : '', cc: a.cc || '', corr: a.corr || '', siaf: a.siaf || '' }; }); }
-/* ---- Análisis 1503: conciliación de los reportes CLARISA y SIAF Landing con el Registro patrimonial ----
+/* ---- Análisis 1503: conciliación de los reportes CLARISA y Data SIAF Web con el Registro patrimonial ----
    1) Importación: Excel o TXT. Las columnas se reconocen por su encabezado; para CLARISA se usan además las referencias
       iniciales T = DOC. COMPROMISO (O/C), E = cuenta, G = año, H = expediente SIAF (el mes se busca por su encabezado).
       Antes de procesar se valida el contenido de cada columna y nunca se acepta una misma columna para dos campos
@@ -5153,7 +5153,7 @@ function an1503Rows() { let n = 0; return S.inv.filter(b => b && !ENG.sinCodigo(
       configurable). Si no se puede validar, queda pendiente.
    6) SIAF: expedientes de las operaciones conciliadas.
    7) Estado separado por bien y matriz con trazabilidad hasta la fila y el archivo de origen.                     */
-const AN_SRC = [['clarisa', 'CLARISA', 'file-spreadsheet', '--c-cfg'], ['siaf', 'SIAF Landing', 'landmark', '--c-san']];
+const AN_SRC = [['clarisa', 'CLARISA', 'file-spreadsheet', '--c-cfg'], ['siaf', 'Data SIAF Web', 'landmark', '--c-san']];
 const AN_REF = { clarisa: { oc: 19, cta: 4, anio: 6 } }; /* referencias iniciales del Excel CLARISA: T, E, G (el mes por su encabezado) */
 const AN_CAMPOS = [
   ['oc', 'N° de orden de compra (DOC. COMPROMISO)', false, /DOC\w* COMPROMISO|ORDEN (DE )?COMPRA|^O C\b|^OC\b|^N\w* O C\b|NRO ORDEN|^COMPROMISO\b/, /SERVICIO/],
@@ -5175,7 +5175,17 @@ const AN_CL = [ /* CLARISA «Detalle de operaciones»: solo las columnas resalta
   ['cta', 'Cuenta contable', true, /^CUENTA\b|^CTA CONTABLE$/, /DESCRIP|NOMBRE|DENOMINA|BANCARIA|CORRIENTE/],
   ['anio', 'Año', true, /^ANO\b|^ANIO\b|^A.{0,2}O$|EJERCICIO|ANO (DE )?REG|ANO EJE|ANO CONTAB/, /MES/],
   ['siaf', 'SIAF (Exp.)', false, /SIAF|EXPEDIENTE|^EXP\b|NRO EXP|^N\w* EXP/, /MES|SUBCTA/]];
-const anCampos = k => k === 'clarisa' ? AN_CL : AN_CAMPOS;
+/* Data SIAF Web: exportación del módulo contable del SIAF (Excel o TXT). Se reconocen año, mes, N° SIAF, cuenta, nota contable,
+   N° de orden de compra y valor del registro; solo se toman registros válidos */
+const AN_SW = [
+  ['anio', 'Año', true, /^ANO\b|^ANIO\b|^A.{0,2}O$|EJERCICIO|ANO (DE )?REG|ANO EJE|ANO CONTAB|^ANO PROCESO/, /MES/],
+  ['mes', 'Mes', false, /^MES\b|MES (DE )?REG|MES CONTAB|MES EJE|^MES PROCESO|^PERIODO$/, null],
+  ['siaf', 'N° SIAF (expediente)', false, /SIAF|EXPEDIENTE|^EXP\b|NRO EXP|^N\w* EXP/, /MES|ANO/],
+  ['cta', 'Cuenta contable', true, /CUENTA|^CTA\b|^MAYOR\b|CLASIF\w* CONTAB/, /DESCRIP|NOMBRE|DENOMINA|BANCARIA|CORRIENTE/],
+  ['nota', 'Nota contable', false, /NOTA|^N\w* NC\b|^NC\b/, null],
+  ['oc', 'N° orden de compra', false, /ORDEN (DE )?COMPRA|^O ?C\b|^OC\b|^N\w* O ?C\b|COMPROMISO|NRO ORDEN/, /SERVICIO|^DOCUM\w* COMPROMISO$/],
+  ['imp', 'Valor del registro', true, /IMPORTE|MONTO|VALOR|^DEBE\b|^TOTAL\b/, /HABER|DEPREC|RESIDUAL|NETO|UNIT/]];
+const anCampos = k => k === 'clarisa' ? AN_CL : k === 'siaf' ? AN_SW : AN_CAMPOS;
 const anCdef = (k, f) => anCampos(k).find(c => c[0] === f) || AN_C[f];
 const AN_EST = {
   CONCILIADO: ['Conciliado', '--ok'], CONC_CORR: ['Conciliado · corrección propuesta', '--ok'], CONC_PEND: ['Conciliado · corrección pendiente', '--warn'],
@@ -5272,25 +5282,32 @@ function anLeerFilas(I) { const rows = I.sheets[I.si].rows, M = I.map, filas = [
   const entOk = v => { const t = anH(v); if (!t) return true; const ue = String(en.ue || '').replace(/^0+/, ''), ruc = String(en.ruc || ''), nom = anH(en.nombre); const d = t.replace(/\D/g, '').replace(/^0+/, '');
     return (ue && (d === ue || t.includes(' ' + ue) || t.startsWith(ue + ' '))) || (ruc && t.includes(ruc)) || (nom && (t.includes(nom) || nom.includes(t))) || (!ue && !ruc && !nom); };
   const val = (w, f) => M[f] >= 0 ? w[M[f]] : null;
-  const CL = I.k === 'clarisa', omit = {}; let ultCta = '', hayDatos = false, modo = null; const ctaDe = w => { let c = anCta(val(w, 'cta')); if (I.ctaSub && /^\d{4}$/.test(c)) { const sub = [1, 2, 3].map(d => String(w[M.cta + d] ?? '').trim().replace(/\.0+$/, '')).filter(x => /^\d{1,4}$/.test(x)); if (sub.length) c = c + '.' + sub.map(x => x.padStart(2, '0')).join(''); } return /^\d{4}/.test(c) ? c : ''; };
+  const CL = I.k === 'clarisa', SW = I.k === 'siaf', omit = {}; let ultCta = '', hayDatos = false, modo = null; const ctaDe = w => { let c = anCta(val(w, 'cta')); if (I.ctaSub && /^\d{4}$/.test(c)) { const sub = [1, 2, 3].map(d => String(w[M.cta + d] ?? '').trim().replace(/\.0+$/, '')).filter(x => /^\d{1,4}$/.test(x)); if (sub.length) c = c + '.' + sub.map(x => x.padStart(2, '0')).join(''); } return /^\d{4}/.test(c) ? c : ''; };
   for (let r = I.ini ?? I.hdr + 1; r < rows.length; r++) { const w = rows[r] || [], fila = r + 1;
     const usadas = Object.values(M).filter(i => i >= 0); if (usadas.every(i => w[i] == null || String(w[i]).trim() === '')) continue;
     const txt = w.slice(0, 8).map(anH).join(' '), txtJ = txt.replace(/\s+/g, ''); const anio = anYear(val(w, 'anio'));
+    if (SW && w.some(v => /ANULAD|EXTORN/.test(anH(v)))) { omit.anul = (omit.anul || 0) + 1; continue; } /* Data SIAF Web: registros anulados o extornados no son válidos */
     const c0 = ctaDe(w); if (c0 && !isFinite(anio)) { ultCta = c0; modo = null; } /* filas de cabecera de cuenta: la cuenta se arrastra a sus líneas de detalle */
     if (CL && !isFinite(anio)) { const tx = w.map(anH).join(' '); if (/\bAPERTURA\b/.test(tx)) modo = 'APERTURA'; else if (/\bCIERRE\b/.test(tx)) modo = 'CIERRE'; else if (/\b(ENERO|FEBRERO|MARZO|ABRIL|MAYO|JUNIO|JULIO|AGOSTO|SETIEMBRE|SEPTIEMBRE|OCTUBRE|NOVIEMBRE|DICIEMBRE)\b/.test(tx)) modo = null; continue; } /* CLARISA: filas de grupo, cuenta, mes y subtotales */
     if (CL && modo) { omit[modo] = (omit[modo] || 0) + 1; continue; } /* saldos de apertura y cierre: no son operaciones */
     if (!isFinite(anio)) { if (hayDatos && !c0 && !/TOTAL|RESUMEN|INFORMACIONAL|SALDO|ACUMULADO/.test(txtJ)) errores.push({ fila, motivo: `Año de registro inválido: «${String(val(w, 'anio') ?? '')}»` }); continue; }
-    const imp = anNum(val(w, 'imp')); if (CL && (val(w, 'imp') == null || String(val(w, 'imp')).trim() === '' || imp === 0)) { omit.haber = (omit.haber || 0) + 1; continue; } if (!isFinite(imp)) { errores.push({ fila, motivo: `Importe inválido: «${String(val(w, 'imp') ?? '')}»` }); continue; }
+    const imp = anNum(val(w, 'imp')); if ((CL || SW) && (val(w, 'imp') == null || String(val(w, 'imp')).trim() === '' || imp === 0)) { const kk = CL ? 'haber' : 'cero'; omit[kk] = (omit[kk] || 0) + 1; continue; } if (!isFinite(imp)) { errores.push({ fila, motivo: `Importe inválido: «${String(val(w, 'imp') ?? '')}»` }); continue; }
     if (M.ent >= 0 && !entOk(val(w, 'ent'))) { errores.push({ fila, motivo: `Otra entidad: «${String(val(w, 'ent'))}» (no se incluye)` }); continue; }
+    if (SW && (val(w, 'imp') == null || String(val(w, 'imp')).trim() === '' || imp === 0)) { omit.cero = (omit.cero || 0) + 1; continue; }
+    if (SW && M.mes >= 0) { const mv = String(val(w, 'mes') ?? '').trim(), mh = anH(mv); if (/^0+$|^13$/.test(mv.replace(/\.0+$/, '')) || /APERTURA|CIERRE/.test(mh)) { omit[/^13$|CIERRE/.test(mv.replace(/\.0+$/, '') + mh) ? 'CIERRE' : 'APERTURA'] = (omit[/^13$|CIERRE/.test(mv.replace(/\.0+$/, '') + mh) ? 'CIERRE' : 'APERTURA'] || 0) + 1; continue; }
+      if (!isFinite(anMes(mv))) { errores.push({ fila, motivo: `Mes inválido: «${mv}» (no se incluye)` }); continue; } }
+    if (SW && !ctaDe(w)) { errores.push({ fila, motivo: `Cuenta contable inválida: «${String(val(w, 'cta') ?? '')}» (no se incluye)` }); continue; }
     const mes = M.mes >= 0 ? anMes(val(w, 'mes')) : NaN; if (M.mes >= 0 && !isFinite(mes)) errores.push({ fila, motivo: `Mes inválido: «${String(val(w, 'mes') ?? '')}» (la fila se incluye sin mes)`, aviso: true });
     hayDatos = true; let cta = ctaDe(w); if (cta) ultCta = cta; else if (ultCta) cta = ultCta; if (!cta) errores.push({ fila, motivo: 'Fila sin cuenta contable (se incluye para el cruce por O/C)', aviso: true });
     const tdoc = M.tdoc >= 0 ? String(val(w, 'tdoc') ?? '').trim() : '', esOCt = !tdoc || /\bO\s*[\/.]?\s*C\b|ORDEN\s+DE\s+COMPRA/.test(anNN(tdoc));
     const ocRaw = M.oc >= 0 ? String(val(w, 'oc') ?? '').trim() : '', oc = esOCt ? anOC(ocRaw, true) : null; /* «Docum. Compromiso» distinto de O/C (O/S, contrato…): el número no es orden de compra */
     if (oc?.y && oc.y !== anio) errores.push({ fila, motivo: `La O/C «${ocRaw}» indica el año ${oc.y} y la fila es del ${anio}: se usa el año de registro`, aviso: true });
     const siaf = M.siaf >= 0 ? String(val(w, 'siaf') ?? '').split(/[\/;,|]+/).map(x => anExp(x)).filter(Boolean) : [];
-    filas.push({ fila, anio, mes: isFinite(mes) ? mes : null, cta, imp: Math.round(imp * 100) / 100, ocRaw: [tdoc, ocRaw].filter(Boolean).join(' '), ocN: oc?.n || '', siaf, doc: String(val(w, 'doc') ?? '').trim(), desc: String(val(w, 'desc') ?? '').trim(), ent: String(val(w, 'ent') ?? '').trim(),
+    filas.push({ fila, anio, mes: isFinite(mes) ? mes : null, cta, imp: Math.round(imp * 100) / 100, ocRaw: [tdoc, ocRaw].filter(Boolean).join(' '), ocN: oc?.n || '', siaf, nota: String(val(w, 'nota') ?? '').trim().replace(/\.0+$/, ''), doc: String(val(w, 'doc') ?? val(w, 'nota') ?? '').trim(), desc: String(val(w, 'desc') ?? '').trim(), ent: String(val(w, 'ent') ?? '').trim(),
       raw: w.slice(0, Math.max(30, Math.max(...usadas) + 1)).map(v => v == null ? '' : String(v).slice(0, 120)) }); }
   if (omit.APERTURA || omit.CIERRE) errores.push({ fila: '—', motivo: `${fmtI((omit.APERTURA || 0) + (omit.CIERRE || 0))} fila(s) de APERTURA o CIERRE omitidas: son saldos, no operaciones del ejercicio`, aviso: true });
+  if (omit.anul) errores.push({ fila: '—', motivo: `${fmtI(omit.anul)} registro(s) anulados o extornados omitidos (no son válidos)`, aviso: true });
+  if (omit.cero) errores.push({ fila: '—', motivo: `${fmtI(omit.cero)} registro(s) sin valor omitidos`, aviso: true });
   if (omit.haber) errores.push({ fila: '—', motivo: `${fmtI(omit.haber)} movimiento(s) sin importe en DEBE omitidos (solo Haber)`, aviso: true });
   return { filas, errores }; }
 const anHash = rows => { let h1 = 0xdeadbeef, h2 = 0x41c6ce57; const s = JSON.stringify(rows); for (let i = 0; i < s.length; i++) { const c = s.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); } return ((h2 >>> 0).toString(16) + (h1 >>> 0).toString(16)) + ':' + s.length; };
@@ -5429,6 +5446,23 @@ const anEstBadge = e => `<span class="badge" style="--k:var(${(AN_EST[e] || [])[
 const anFila = (r, i) => [i + 1, (AN_EST[r.estado] || [r.estado])[0], r.sentido, r.anio, r.mesC ?? '', r.mesP ?? '', [r.oc, r.ocP].filter(Boolean).join(' | '), r.bienes.join(', '), r.ctaC, r.ctaP, r.impC ?? '', r.impP ?? '', r.dif ?? '', r.corr.map(c => `${c.cod}: ${c.de || '—'} → ${c.a}`).join('; '), r.siaf.join(' / '), r.filas.length ? 'Filas ' + r.filas.join(', ') : '', [r.sustento, ...r.obs, ...r.corr.map(c => c.mot)].join(' ')];
 
 const anEstCell = b => { const E = b.an?.est || {}; return AN_SRC.filter(([k]) => E[k]).map(([k, t]) => `<div class="an-eb"><small>${h(t)}</small>${anEstBadge(E[k].e)}</div>`).join('') || '<span class="muted">—</span>'; };
+/* ---- Data SIAF Web: registros válidos del módulo contable por cuenta contable (pantalla, Excel y PDF) ---- */
+const AN_MESN = ['APERTURA', 'ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JULIO', 'AGOSTO', 'SETIEMBRE', 'OCTUBRE', 'NOVIEMBRE', 'DICIEMBRE', 'CIERRE'];
+const swEnCta = (f, c) => !c || f.cta === c || f.cta.startsWith(c + '.') || (/^\d{4}$/.test(c) && f.cta.startsWith(c));
+const swFilas = c => (S.sanSrcData?.siaf?.filas || []).filter(f => swEnCta(f, c)).sort((a, b) => a.cta.localeCompare(b.cta, 'es', { numeric: true }) || a.anio - b.anio || (a.mes ?? 0) - (b.mes ?? 0) || String(a.siaf[0] || '').localeCompare(String(b.siaf[0] || ''), 'es', { numeric: true }) || a.fila - b.fila);
+const swMes = m => m == null ? '' : `${String(m).padStart(2, '0')} ${AN_MESN[m] || ''}`;
+function swCtas() { const M = new Map(); (S.sanSrcData?.siaf?.filas || []).forEach(f => { const o = M.get(f.cta) || M.set(f.cta, { n: 0, t: 0 }).get(f.cta); o.n++; o.t += anC2(f.imp); }); return [...M.entries()].sort((a, b) => a[0].localeCompare(b[0], 'es', { numeric: true })); }
+function swCard() { const D = S.sanSrcData?.siaf; if (!D) return ''; const C = swCtas(), may = [...new Set(C.map(([c]) => c.slice(0, 4)))], sel = VIEWS.analisis.swc || '', F = swFilas(sel), tot = F.reduce((a, f) => a + anC2(f.imp), 0);
+  const opt = (v, t) => `<option value="${h(v)}" ${sel === v ? 'selected' : ''}>${h(t)}</option>`;
+  return card('Data SIAF Web · registros por cuenta contable', 'landmark', `<p class="muted" style="margin:0 0 10px">Archivo <b>${h(D.archivo)}</b> · ${fmtI(D.filas.length)} registros válidos del módulo contable · cargado el ${fmtD(D.fecha.slice(0, 10))}. Solo se incluyen registros con año, mes, cuenta y valor válidos (sin apertura, cierre, anulados ni extornos).</p>
+    <div class="tbl-bar"><label class="input sm" style="min-width:340px">${ic('filter')}<select id="sw-cta">${opt('', `Todas las cuentas (${fmtI(D.filas.length)})`)}${may.map(m => opt(m, `Cuenta ${m} · todas sus subcuentas`)).join('')}${C.map(([c, o]) => opt(c, `${c} · ${fmtI(o.n)} reg. · S/ ${fmtN(o.t / 100)}`)).join('')}</select></label></div>
+    <div class="kpis">${kpi('Registros', fmtI(F.length), sel ? `cuenta ${sel}` : 'todas las cuentas', '--c-san')}${kpi('Valor de los registros', money(tot / 100))}${kpi('Cuentas contables', fmtI(new Set(F.map(f => f.cta)).size))}${kpi('Expedientes SIAF', fmtI(new Set(F.flatMap(f => f.siaf)).size))}</div>
+    <div id="swTbl" style="margin-top:12px"></div>`, '', exportBar('siafCta', sel)); }
+function swDraw() { const el = $('#swTbl'); if (!el) return; const F = swFilas(VIEWS.analisis.swc || '');
+  dataTable(el, { rows: F, pageSize: 20, cols: [
+    { h: 'Año', k: 'anio', a: 'c' }, { h: 'Mes', fn: f => swMes(f.mes), sv: f => f.mes ?? 0 }, { h: 'N° SIAF', fn: f => f.siaf.join(' / '), txt: f => f.siaf.join(' ') },
+    { h: 'Cuenta contable', html: true, fn: f => `<span class="mono">${h(f.cta)}</span>`, txt: f => f.cta, sv: f => f.cta }, { h: 'Nota contable', fn: f => f.nota || '' }, { h: 'N° orden de compra', fn: f => f.ocRaw || '', txt: f => f.ocRaw + ' ' + f.ocN },
+    { h: 'Valor del registro', fn: f => fmtN(f.imp), a: 'r', sv: f => f.imp }, { h: 'Fila', fn: f => f.fila, a: 'c', sv: f => f.fila }] }); }
 function anConcCard() { const C = S.sanConc || {}, ks = AN_SRC.map(x => x[0]).filter(k => C[k] && S.sanSrcData?.[k]); if (!ks.length) return '';
   const k = ks.includes(VIEWS.analisis.ctab) ? VIEWS.analisis.ctab : ks[0], D = S.sanSrcData[k], res = C[k].res, cnt = {}; res.forEach(r => cnt[r.estado] = (cnt[r.estado] || 0) + 1);
   const err = D.errores.filter(e => !e.aviso), av = D.errores.filter(e => e.aviso), conc = res.filter(r => AN_OK.has(r.estado));
@@ -5457,7 +5491,7 @@ VIEWS.analisis = { pag: 0, q: '', render(el) {
   const m = M('analisis'), R = an1503Rows(), tPv = R.reduce((a, x) => a + x.pv, 0), tCv = R.reduce((a, x) => a + (+x.cv || 0), 0), nCorr = R.filter(x => x.corr).length;
   el.innerHTML = `<div style="--c:var(${m.c});display:grid;gap:18px">
   <div class="kpis">${kpi('Bienes analizados', fmtI(R.length), 'del inventario valorizado importado', '--c-san')}${kpi('Registro patrimonial', money(tPv))}${kpi('Registro contable', money(tCv))}${kpi('Registrados en contable', fmtI(R.filter(x => x.cv !== '').length), `de ${fmtI(R.length)} bienes`)}${kpi('Con corrección de cuenta', fmtI(nCorr), 'anotadas por el analista', nCorr ? '--warn' : '--ok')}</div>
-  ${card('Análisis de la cuenta contable 1503', 'chart-bar-big', R.length ? `<div class="tbl-bar"><label class="input sm">${ic('search')}<input type="search" id="an-q" placeholder="Buscar código, denominación, cuenta…" value="${h(VIEWS.analisis.q)}"></label><span class="muted" id="an-n"></span><span class="an-src">${AN_SRC.map(([k, t, i, c]) => `<span class="an-sg"><label class="mini" style="--c:var(${c});cursor:pointer" title="Importe el reporte ${h(t)} (Excel o TXT): valida las columnas y concilia con el Registro patrimonial por O/C y año">${ic(i)}Reporte ${h(t)}<input type="file" data-ansrc="${k}" hidden accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv,.prn"></label><button class="mini an-del" style="--c:var(--bad)" data-a="anSrcDel" data-k="${k}" ${anSrcN(k) || S.sanSrcData?.[k] ? '' : 'disabled'} title="${S.sanSrcData?.[k] ? `Eliminar el reporte ${h(t)} cargado (${h(S.sanSrcData[k].archivo)})` : `No hay datos importados del reporte ${h(t)}`}">${ic('trash-2')}Eliminar</button></span>`).join('')}</span></div><div id="anTbl"></div>` : `<div class="alert" style="--k:var(--warn)">${ic('info')}<div>Aún no hay inventario valorizado. Impórtelo en <b>Procesar reporte patrimonial › Importar invent. valorizado › Cargar</b>: el análisis se arma solo.</div></div>`, '', R.length ? exportBar('analisis1503') : '')}${anConcCard()}</div>`;
+  ${card('Análisis de la cuenta contable 1503', 'chart-bar-big', R.length ? `<div class="tbl-bar"><label class="input sm">${ic('search')}<input type="search" id="an-q" placeholder="Buscar código, denominación, cuenta…" value="${h(VIEWS.analisis.q)}"></label><span class="muted" id="an-n"></span><span class="an-src">${AN_SRC.map(([k, t, i, c]) => `<span class="an-sg"><label class="mini" style="--c:var(${c});cursor:pointer" title="Importe el reporte ${h(t)} (Excel o TXT): valida las columnas y concilia con el Registro patrimonial por O/C y año">${ic(i)}${k === 'siaf' ? '' : 'Reporte '}${h(t)}<input type="file" data-ansrc="${k}" hidden accept=".xlsx,.xlsm,.xls,.csv,.txt,.tsv,.prn"></label><button class="mini an-del" style="--c:var(--bad)" data-a="anSrcDel" data-k="${k}" ${anSrcN(k) || S.sanSrcData?.[k] ? '' : 'disabled'} title="${S.sanSrcData?.[k] ? `Eliminar el reporte ${h(t)} cargado (${h(S.sanSrcData[k].archivo)})` : `No hay datos importados del reporte ${h(t)}`}">${ic('trash-2')}Eliminar</button></span>`).join('')}</span></div><div id="anTbl"></div>` : `<div class="alert" style="--k:var(--warn)">${ic('info')}<div>Aún no hay inventario valorizado. Impórtelo en <b>Procesar reporte patrimonial › Importar invent. valorizado › Cargar</b>: el análisis se arma solo.</div></div>`, '', R.length ? exportBar('analisis1503') : '')}${anConcCard()}${swCard()}</div>`;
   if (!R.length) return;
   const draw = () => { const R = an1503Rows(), q = ENG.norm(VIEWS.analisis.q || ''), L = q ? R.filter(x => ENG.norm([x.b.cod, x.b.den, x.b.marca, x.b.modelo, x.b.serie, x.pc, x.cc, x.corr, x.siaf].join(' ')).includes(q)) : R;
     const PS = 50, pages = Math.max(1, Math.ceil(L.length / PS)); VIEWS.analisis.pag = Math.min(VIEWS.analisis.pag, pages - 1); const pg = VIEWS.analisis.pag, sl = L.slice(pg * PS, pg * PS + PS);
@@ -5469,10 +5503,10 @@ VIEWS.analisis = { pag: 0, q: '', render(el) {
         <td class="r grp-p">${fmtN(x.pv)}</td><td class="mono c grp-p">${h(x.pc)}</td><td class="r grp-c">${inp(x, 'cv', x.cv, 96, true)}</td><td class="grp-c">${inp(x, 'cc', x.cc, 104)}</td><td title="${h(x.b.an?.corrMot || '')}">${inp(x, 'corr', x.corr, 104)}</td><td>${inp(x, 'siaf', x.siaf, 84)}</td><td class="an-est">${anEstCell(x.b)}</td></tr>`).join('')}</tbody>
       <tfoot><tr><td colspan="12" class="c"><b>TOTALES</b></td><td class="r"><b>${fmtN(L.reduce((a, x) => a + x.pv, 0))}</b></td><td></td><td class="r"><b>${fmtN(L.reduce((a, x) => a + (+x.cv || 0), 0))}</b></td><td colspan="4"></td></tr></tfoot></table></div>
       ${pages > 1 ? `<div class="pager"><button class="icon-btn" data-anp="0" ${pg === 0 ? 'disabled' : ''}>${ic('chevrons-left')}</button><button class="icon-btn" data-anp="${pg - 1}" ${pg === 0 ? 'disabled' : ''}>${ic('chevron-left')}</button><span class="muted">Página ${pg + 1} de ${pages}</span><button class="icon-btn" data-anp="${pg + 1}" ${pg >= pages - 1 ? 'disabled' : ''}>${ic('chevron-right')}</button><button class="icon-btn" data-anp="${pages - 1}" ${pg >= pages - 1 ? 'disabled' : ''}>${ic('chevrons-right')}</button></div>` : ''}`; };
-  draw(); anConcDraw();
+  draw(); anConcDraw(); swDraw();
   $('#an-q').oninput = e => { VIEWS.analisis.q = e.target.value; VIEWS.analisis.pag = 0; draw(); };
   el.onclick = e => { const ct = e.target.closest('[data-anct]'); if (ct) { VIEWS.analisis.ctab = ct.dataset.anct; VIEWS.analisis.cf = ''; return refresh(); } const b = e.target.closest('[data-anp]'); if (b && !b.disabled) { VIEWS.analisis.pag = +b.dataset.anp; draw(); } };
-  el.onchange = e => { if (e.target.id === 'anc-f') { VIEWS.analisis.cf = e.target.value; return anConcDraw(); } const fi = e.target.closest('[data-ansrc]'); if (fi) { const f = fi.files?.[0], k = fi.dataset.ansrc; fi.value = ''; if (f) anSrcLeer(k, f); return; }
+  el.onchange = e => { if (e.target.id === 'sw-cta') { VIEWS.analisis.swc = e.target.value; return refresh(); } if (e.target.id === 'anc-f') { VIEWS.analisis.cf = e.target.value; return anConcDraw(); } const fi = e.target.closest('[data-ansrc]'); if (fi) { const f = fi.files?.[0], k = fi.dataset.ansrc; fi.value = ''; if (f) anSrcLeer(k, f); return; }
     const t = e.target.closest('.an-in'); if (!t) return; const b = S.inv.find(x => String(x.cod) === t.dataset.an); if (!b) return; const k = t.dataset.k; b.an = b.an || {};
     if (k === 'cv') { const tx = String(t.value).replace(/,/g, '').trim(); if (tx === '') { b.an.cv = ''; } else { const v = parseFloat(tx); if (!isFinite(v)) { toast('Ingrese un valor numérico', 'warn'); t.value = b.an.cv === '' || b.an.cv == null ? '' : fmtN(b.an.cv); return; } b.an.cv = Math.round(v * 100) / 100; t.value = fmtN(b.an.cv); } }
     else b.an[k] = t.value.trim().toUpperCase();
@@ -5995,6 +6029,21 @@ REP.REPORTS.concFuente = k => { const T = anT(k), D = S.sanSrcData?.[k], C = S.s
       { h: 'IMPORTE REPORTE', x: 'num', wx: 14, pw: 7 }, { h: 'VALOR PATRIMONIAL', x: 'num', wx: 14, pw: 7 }, { h: 'DIFERENCIA', x: 'num', wx: 12, pw: 6 }, { h: 'CORRECCIÓN PROPUESTA', wx: 30, pw: 11 }, { h: 'SIAF', wx: 14, pw: 6 }, { h: 'ORIGEN', wx: 18, pw: 7 }, { h: 'SUSTENTO / OBSERVACIÓN', wx: 70, pw: 22 }],
     rows: () => (C?.res || []).map(anFila), xlsx: undefined, size: 5.4 }; };
 SAN_REPS.push('concFuente');
+/* Data SIAF Web por cuenta contable: formato tipo «Detalle de operaciones» (cuenta → año y mes → registros, con subtotales) */
+REP.REPORTS.siafCta = c => { const D = S.sanSrcData?.siaf, F = swFilas(c || '');
+  const rows = () => { const out = []; let n = 0, i = 0;
+    while (i < F.length) { const cta = F[i].cta; let j = i; while (j < F.length && F[j].cta === cta) j++; const ini = out.length;
+      out.push({ style: 'sub', cells: ['', `CUENTA ${cta}`, '', '', '', '', '', ''] }); let k = i;
+      while (k < j) { const a = F[k].anio, m = F[k].mes; let q = k; while (q < j && F[q].anio === a && F[q].mes === m) q++;
+        out.push({ style: 'sub', cells: ['', a, swMes(m), '', '', '', '', ''] });
+        for (let x = k; x < q; x++) { const f = F[x]; out.push([++n, f.anio, swMes(f.mes), f.siaf.join(' / '), f.cta, f.nota || '', f.ocRaw || '', f.imp]); }
+        out.push({ style: 'sub', span: q - k, cells: ['', '', `Subtotal ${swMes(m)} ${a}`, '', '', '', '', Math.round(F.slice(k, q).reduce((s, f) => s + anC2(f.imp), 0)) / 100] }); k = q; }
+      out.push({ style: 'sub', span: out.length - ini, cells: ['', `TOTAL CUENTA ${cta}`, '', '', '', '', '', Math.round(F.slice(i, j).reduce((s, f) => s + anC2(f.imp), 0)) / 100] }); i = j; }
+    return out; };
+  return { title: `DATA SIAF WEB · REGISTROS POR CUENTA CONTABLE${c ? ' ' + c : ''}`, file: `DATA_SIAF_WEB${c ? '_' + c.replace(/\./g, '') : ''}`, sub: D ? `Archivo: ${D.archivo} · ${F.length} registros válidos${c ? ' · cuenta ' + c : ' · todas las cuentas'}` : '',
+    cols: [{ h: 'N°', x: 'int', wx: 6, pw: 3 }, { h: 'AÑO', x: 'c', wx: 8, pw: 4 }, { h: 'MES', wx: 16, pw: 8 }, { h: 'N° SIAF', wx: 14, pw: 7 }, { h: 'CUENTA CONTABLE', wx: 16, pw: 8 }, { h: 'NOTA CONTABLE', wx: 16, pw: 8 }, { h: 'N° ORDEN DE COMPRA', wx: 18, pw: 9 }, { h: 'VALOR DEL REGISTRO', x: 'num', wx: 18, pw: 9 }],
+    rows, totals: () => ['', 'TOTAL GENERAL', '', '', '', '', '', Math.round(F.reduce((s, f) => s + anC2(f.imp), 0)) / 100], size: 7 }; };
+SAN_REPS.push('siafCta');
 { const _e = REP.exportar; REP.exportar = (...a) => SAN_VIEWS.has(CUR) || SAN_REPS.includes(a[0]) ? withSan(() => _e(...a)) : _e(...a); }
 
 /* ---------- Eventos globales ---------- */
