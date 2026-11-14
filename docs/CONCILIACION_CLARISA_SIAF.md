@@ -42,6 +42,10 @@ Reglas de lectura:
 ## 2. Cruce (ambos sentidos)
 
 - **Clave:** entidad + año de registro + N° de O/C (normalizado: sin prefijos, espacios ni ceros a la izquierda; el texto original se conserva). Nunca se relacionan años distintos.
+- **Registro patrimonial — columna «Documento adquisición»:** se lee como N° de O/C tanto con prefijo («O/C 923», «O/CN°426-2016») como sin él.
+  - «459» → O/C 459, con el año de la fecha de alta.
+  - «1-2022» y «26-2021» → O/C 1 y 26, con el año que trae (2022, 2021).
+  - Boletas, facturas, NEA, acuerdos, O/S y textos («S/D», «SIN DOCUMENTO») no se toman como O/C.
 - **Agrupación por O/C + cuenta contable:**
   1. Para cada cuenta del reporte dentro de la O/C, se suman los bienes del Registro patrimonial de la misma O/C, año y cuenta (uno solo o varios).
   2. Si la suma es igual al total del reporte en esa O/C y cuenta, la operación queda **Conciliada**.

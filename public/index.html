@@ -5307,7 +5307,9 @@ function anEvalCta(x, V) { const b = x.b, y = x.y, P = x.cta, uit = S.cfg.uit ||
 /* Cruce automático (se ejecuta dentro de la data del saneamiento) */
 function anConciliar(k) { const D = S.sanSrcData?.[k]; if (!D) return []; const T = anT(k), V = new Map(VAL().map(x => [x.b, x]));
   const uniq = a => [...new Set(a.filter(v => v !== '' && v != null))];
-  const B = an1503Rows().map(x => x.b).map(b => ({ b, oc: anOC(b.doc, false), y: ENG.year(b.fecha), m: b.fecha ? +String(b.fecha).slice(5, 7) || null : null, cta: String(b.cta || '').trim(), v: anC2(b.valor) }));
+  /* Documento de adquisición del Registro patrimonial: «O/C 923», «459», «1-2022», «26-2021» → N° de O/C (y año si lo trae);
+     boletas, facturas, NEA, acuerdos y textos no se toman como orden de compra */
+  const B = an1503Rows().map(x => x.b).map(b => { const oc = anOC(b.doc, true); return { b, oc, y: oc?.y || ENG.year(b.fecha), m: b.fecha ? +String(b.fecha).slice(5, 7) || null : null, cta: String(b.cta || '').trim(), v: anC2(b.valor) }; });
   const res = [], usados = new Set(); let id = 0; const push = o => { o.id = ++id; res.push(o); return o; };
   const keyC = new Map(), keyP = new Map(), ocAnios = new Map();
   D.filas.forEach(f => { if (!f.ocN) return; const kk = f.anio + '|' + f.ocN; (keyC.get(kk) || keyC.set(kk, []).get(kk)).push(f); (ocAnios.get(f.ocN) || ocAnios.set(f.ocN, new Set()).get(f.ocN)).add(f.anio); });
