@@ -104,7 +104,9 @@ Reglas de lectura:
 - **Desplegables «Cuenta contable» y «Año»** junto al botón Data SIAF Web (reemplazan al antiguo botón «Archivo»):
   - Se llenan solos con las cuentas y los años reconocidos al cargar la data SIAF.
   - Las cuentas incluyen las cuentas mayores (p. ej. 1503 con todas sus subcuentas).
-  - Filtran la tabla, los reportes Excel/PDF y el resumen de **operaciones por año** (cantidad y valor por año, con filtro por clic). No hay conexión directa con el SIAF: no existe una interfaz oficial autorizada y el sistema no usa credenciales.
+  - Filtran la tabla, los reportes Excel/PDF y el resumen de **operaciones por año** (cantidad y valor por año, con filtro por clic).
+  - **Enlazados:** al cambiar el **Año**, el desplegable **Cuenta contable** muestra solo las cuentas con registros en ese año. Si la cuenta elegida no tiene registros en el año nuevo, vuelve a «todas».
+  - A continuación del Año están los botones **Vista PDF** y **Excel**, que generan el reporte de la cuenta y el año seleccionados. No hay conexión directa con el SIAF: no existe una interfaz oficial autorizada y el sistema no usa credenciales.
 - **Columnas que se reconocen por su encabezado:** año, mes, N° SIAF (expediente), cuenta contable, nota contable, N° de orden de compra y valor del registro.
 - **Solo registros válidos:** deben tener año, mes (1–12), cuenta contable y valor distinto de cero.
   - Se omiten apertura (00), cierre (13), anulados y extornos.
