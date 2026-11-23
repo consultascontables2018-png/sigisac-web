@@ -476,6 +476,26 @@ span.he-warn{cursor:default;border-color:#fda4af;background:#fff1f2;color:#be123
 
 .m-card.aviso.warn{border-top-color:#f59e0b}.aviso.warn .av-ico{background:radial-gradient(circle at 30% 30%,#fffbeb,#fef3c7);box-shadow:0 0 0 8px rgba(245,158,11,.1),0 10px 24px -10px rgba(245,158,11,.6);color:#d97706}.aviso.warn h3{color:#92400e}
 .m-card.aviso.wide{max-width:640px}
+/* Primer filtro (Inventario físico valorizado): aviso centrado como el del balance */
+.m-card.aviso.filtro{max-width:560px;position:relative}
+.m-card.aviso.filtro.warn{border-top-color:#f59e0b}.m-card.aviso.filtro.bad{border-top-color:#e11d48}
+.aviso.filtro.warn .av-ico{background:radial-gradient(circle at 30% 30%,#fffbeb,#fde68a);box-shadow:0 0 0 8px rgba(245,158,11,.12),0 10px 24px -10px rgba(245,158,11,.7);color:#d97706}
+.aviso.filtro.bad .av-ico{background:radial-gradient(circle at 30% 30%,#fff1f2,#fecdd3);box-shadow:0 0 0 8px rgba(225,29,72,.1),0 10px 24px -10px rgba(225,29,72,.7);color:#e11d48}
+.aviso.filtro.warn h3{color:#b45309}.aviso.filtro.bad h3{color:#be123c}
+.aviso.filtro .av-dl{border-color:#fde2e4}.aviso.filtro.warn .av-dl{border-color:#fde68a}
+.aviso.filtro .av-dl>div{display:flex;justify-content:space-between;align-items:center;gap:12px}
+.aviso.filtro.bad .av-dl>div:nth-child(odd){background:#fff1f2}.aviso.filtro.warn .av-dl>div:nth-child(odd){background:#fffbeb}
+.aviso.filtro.bad .av-dl dt{color:#be123c}.aviso.filtro.warn .av-dl dt{color:#b45309}
+.aviso.filtro .av-dl dd{text-align:right;white-space:nowrap}
+.aviso.filtro .pf-row dt{letter-spacing:.04em;text-transform:none;font-size:13px;color:var(--ink)!important;font-weight:700}
+.pf-n{display:inline-grid;place-items:center;min-width:34px;height:26px;padding:0 9px;border-radius:999px;color:#fff;font:800 13px var(--f-display)}
+.pf-n.bad{background:linear-gradient(135deg,#fb7185,#e11d48)}.pf-n.warn{background:linear-gradient(135deg,#fbbf24,#ea580c)}
+.pf-bad{color:#e11d48}
+.aviso.filtro .btn-glow.pf-ghost{background:linear-gradient(90deg,#64748b,#475569)}
+.aviso.filtro .btn-glow.pf-ok{background:linear-gradient(90deg,#10b981,#059669)}
+.pf-x{position:absolute;top:12px;right:12px;width:34px;height:34px;border-radius:10px;border:1px solid #e2e8f0;background:#fff;display:grid;place-items:center;color:#64748b;cursor:pointer}
+.pf-x:hover{color:#0f172a;border-color:#cbd5e1}.pf-x .ic{width:16px;height:16px}
+
 .av-cmp{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:stretch;width:100%;margin-top:6px}
 .av-cmp>div:not(.av-vs){display:grid;gap:4px;padding:12px 14px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0;text-align:left}
 .av-cmp>div:first-child{background:#fffbeb;border-color:#fde68a}.av-cmp .lbl{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;font-weight:800;color:var(--muted)}.av-cmp b{font-size:13.5px;color:var(--ink)}.av-cmp .mono{font-size:12px;color:#0369a1;font-weight:700}
@@ -6064,10 +6084,14 @@ const filtroObs = () => { const v = VAL(), cnt = {}; v.forEach(x => x.f.forEach(
   if (!FILTRO_REPS.includes(key) || force || !S.inv.length) return _exp(key, kind, arg);
   invCtaAuto(); const o = filtroObs(); if (!o.con) return _exp(key, kind, arg);
   VIEWS.gabinete.pendExp = { key, kind, arg };
-  modal('Primer filtro · Observaciones del inventario', `<div class="alert" style="--k:var(${o.graves ? '--bad' : '--warn'})">${ic('shield-alert')}<div>Antes de generar el <b>Inventario físico valorizado</b> se revisó el inventario: <b>${fmtI(o.con)}</b> de ${fmtI(o.total)} bienes tienen observaciones${o.graves ? `, <b>${fmtI(o.graves)}</b> con errores` : ''}.</div></div>
-    <div class="chips" style="margin:14px 0">${Object.entries(ENG.FLAGS).filter(([k]) => o.cnt[k]).map(([k, [t, sev]]) => `<span class="flag" style="--k:var(${sev === 'bad' ? '--bad' : '--warn'})">${t} <b>${fmtI(o.cnt[k])}</b></span>`).join('')}</div>
-    <p class="muted" style="font-size:12.5px;margin:0">Revise y corrija las observaciones en Gabinete para que el reporte salga conforme.${o.pend ? ` Hay <b>${fmtI(o.pend)}</b> correcciones de cuenta sugeridas que se pueden aplicar ahora.` : ''}</p>`,
-    `<button class="mini ghost" data-a="filtroExp">${ic('file-output')}Generar de todos modos</button>${o.pend ? `<button class="mini" style="--c:var(--ok)" data-a="filtroApply">${ic('wand-sparkles')}Aplicar ${fmtI(o.pend)} correcciones y generar</button>` : ''}<button class="mini" style="--c:var(--c-inv)" data-a="filtroGab">${ic('shield-alert')}Revisar en Gabinete</button>`);
+  const tone = o.graves ? 'bad' : 'warn', fl = Object.entries(ENG.FLAGS).filter(([k]) => o.cnt[k]);
+  $('#modal').innerHTML = `<div class="m-card aviso filtro ${tone}" role="alertdialog" aria-modal="true" aria-labelledby="pfT"><div class="av-ico">${ic('shield-alert')}</div><h3 id="pfT">¡Primer filtro: ${fmtI(o.con)} ${o.con === 1 ? 'bien' : 'bienes'} con observaciones!</h3>
+    <p>Antes de generar el <b>Inventario físico valorizado</b> se revisó el inventario de <b>${h(S.cfg.entidad.nombre || 'la entidad')}</b>.</p>
+    <dl class="av-dl"><div><dt>Bienes revisados</dt><dd>${fmtI(o.total)}</dd></div><div><dt>Bienes con observaciones</dt><dd>${fmtI(o.con)}${o.graves ? ` · <span class="pf-bad">${fmtI(o.graves)} con errores</span>` : ''}</dd></div>${fl.map(([k, [t, sev]]) => `<div class="pf-row"><dt>${h(t)}</dt><dd><span class="pf-n ${sev === 'bad' ? 'bad' : 'warn'}">${fmtI(o.cnt[k])}</span></dd></div>`).join('')}</dl>
+    <p style="font-size:12.5px">Revise y corrija las observaciones en Gabinete para que el reporte salga conforme.${o.pend ? ` Hay <b>${fmtI(o.pend)}</b> correcciones de cuenta sugeridas que se pueden aplicar ahora.` : ''}</p>
+    <div class="av-btns"><button class="btn-glow pf-ghost" data-a="filtroExp">${ic('file-output')}Generar de todos modos</button>${o.pend ? `<button class="btn-glow pf-ok" data-a="filtroApply">${ic('wand-sparkles')}Aplicar ${fmtI(o.pend)} correcciones y generar</button>` : ''}<button class="btn-glow" data-a="filtroGab">${ic('shield-alert')}Revisar en Gabinete</button></div>
+    <button class="pf-x" data-close aria-label="Cerrar">${ic('x')}</button></div>`;
+  $('#modal').hidden = false; setTimeout(() => $('#modal [data-a="filtroGab"]')?.focus(), 30);
 }; }
 /* Importación del balance SIAF: automática desde el servidor de la entidad (por UE) o, si no hay, selección del PDF */
 async function balImport(file, origen) {
