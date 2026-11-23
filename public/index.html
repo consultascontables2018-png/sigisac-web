@@ -1496,7 +1496,7 @@ const LIB = (() => {
     const xf = (st = {}) => {
       const k = [st.f || 'n', st.fill || 'none', st.b ?? 1, st.a || 'l', st.fmt || 'gen', st.wrap ? 1 : 0].join('|');
       if (xfIdx[k] != null) return xfIdx[k];
-      const a = st.a || 'l', h = a === 'c' ? 'center' : a === 'r' ? 'right' : 'left';
+      const a = st.a || 'l', h = a === 'c' ? 'center' : a === 'r' ? 'right' : a === 'j' ? 'justify' : 'left';
       xfs.push(`<xf numFmtId="${FMT[st.fmt || 'gen']}" fontId="${FONT[st.f || 'n']}" fillId="${FILL[st.fill || 'none']}" borderId="${st.b ?? 1}" applyFont="1" applyFill="1" applyBorder="1" applyNumberFormat="1" applyAlignment="1"><alignment horizontal="${h}" vertical="center"${st.wrap ? ' wrapText="1"' : ''}/></xf>`);
       return (xfIdx[k] = xfs.length - 1);
     };
@@ -2334,6 +2334,7 @@ const REP = (() => {
     const base = slug(r.file || r.title) + '_' + per();
     if (typeof key === 'string' && CENTRADOS.includes(key)) r.center = true;
     try {
+      if (kind === 'docx') { if (!r.docx) throw new Error('Este reporte no tiene versión Word'); return saveFile(base + '.docx', r.docx()); }
       if (kind === 'xlsx') { const sheets = r.xlsx ? r.xlsx() : genericXlsx(r); if (r.center) centrar(sheets);
         if (r.fs12) { const M = { n: 'n12', b: 'b12', h: 'h12', t: 't14', i: 'i12', s: 'b12' }; sheets.forEach(sh => sh.rows.forEach(rw => { const C = rw && (rw.cells || (Array.isArray(rw) ? rw : null)); if (rw && rw.h) rw.h = Math.max(rw.h, 34); (C || []).forEach(c => { if (c && typeof c === 'object' && 'v' in c) c.s = { ...(c.s || {}), f: M[(c.s && c.s.f) || 'n'] || (c.s && c.s.f) || 'n12' }; }); })); } /* letra tamaño 12 */ const lg = entLogo(); if (lg) sheets.forEach(sh => sh.logo = lg); return saveFile(base + '.xlsx', LIB.buildXlsx(sheets)); }
       const pdf = new LIB.PDF({ entidad: ent(), title: r.title, landscape: !r.portrait, logo: entLogo() }); if (r.page) { pdf.W = r.page.W; pdf.H = r.page.H; }
@@ -2854,32 +2855,212 @@ const REP = (() => {
     });
   }
 
-  /* ---- Informe final ---- */
+  /* ---- Informe final del inventario: estructura del modelo institucional (Word compartido) ----
+     Un solo contenido (bloques) que se genera en PDF, Word y Excel. Todo se calcula solo:
+     entidad activa, ejercicio, fecha de corte, comisión, resolución, equipos, modalidad,
+     conciliación 1503/9105, valorización, resultados, conclusiones y firmas. */
+  function informeData() {
+    const k = KPI(), c = CONC(), cr = CRUCE(), v = VAL(), d = DEP(), anio = per(), e = S.cfg.entidad || {}, ac = S.cfg.acta || {};
+    const n0 = x => +x || 0, isC = (b, p) => String(ENG.ctaFinal(b) || b.cta || '').startsWith(p);
+    const ubic = typeof VALLISTA === 'function' ? VALLISTA().length : S.inv.filter(b => b.verif).length;
+    const falt = typeof PORUBICAR === 'function' ? PORUBICAR().length : cr.faltantes.length, sobr = cr.sobrantes.length;
+    const est = {}; S.inv.forEach(b => { const x = b.estado || 'REGULAR'; est[x] = (est[x] || 0) + 1; });
+    const fl = re => v.filter(x => x.f.some(f => re.test(f))).length;
+    const sit = b => b.sit || (typeof sitAuto === 'function' ? sitAuto(b.estado) : '');
+    const depUso = S.inv.filter((b, i) => ENG.isDep(ENG.ctaFinal(b)) && d[i] && d[i].neto <= 1.0001 && !['MALO', 'CHATARRA', 'RAEE'].includes(b.estado) && sit(b) !== 'DESUSO').length;
+    const bajaPend = S.inv.filter(b => /baja/i.test(String(b.sitDes || '')) && !/propuest/i.test(String(b.sitDes || ''))).length;
+    const prest = S.inv.filter(b => isC(b, '9105.01') || isC(b, '9105.02')).length;
+    const cedidos = S.inv.filter(b => /ced|afect/i.test(String(b.sitDes || ''))).length;
+    const val = ['1503', '9105'].map(p => { let n = 0, vi = 0, da = 0, vn = 0; S.inv.forEach((b, i) => { if (!isC(b, p)) return; n++; vi += n0(b.valor); da += n0(d[i]?.acum); vn += n0(d[i]?.neto); }); return { p, n, vi: r2x(vi), da: r2x(da), vn: r2x(vn) }; });
+    const cn = ['1503', '9105'].map(p => { const r = c.rows.find(x => x.cod === p) || { b: 0, c: 0, d: 0, den: '' }; return { p, den: r.den, b: n0(r.b), c: n0(r.c), d: n0(r.d) }; });
+    const com = (S.cfg.comision || []).filter(m => m && m.rol !== 'Accesitario'), nom = re => { const m = com.find(x => re.test(`${x.rol} ${x.cargo || ''}`)); return m ? String(m.nombre || '').trim() : ''; };
+    const grupos = Math.max(+S.cfg.equipos || 0, ...(Array.isArray(S.cfg.personal) ? S.cfg.personal : []).map(p => +p.g || 0), 0);
+    const resp = [...new Set(S.inv.map(b => b.resp || 'SIN RESPONSABLE'))], dig = typeof a7Get === 'function' ? resp.filter(r => a7Get(r).ver === 'DIGITAL').length : 0;
+    const hoy = new Date(), fecha = `${String(hoy.getDate()).padStart(2, '0')}/${String(hoy.getMonth() + 1).padStart(2, '0')}/${hoy.getFullYear()}`;
+    return { anio, ent: ent(), ruc: e.ruc || '', corte: corteTxt(), fecha, k, val, cn, bal: !!S.bal, ubic, falt, sobr, total: ubic + falt + sobr,
+      malos: (est.MALO || 0) + (est.CHATARRA || 0), raee: est.RAEE || 0, bajaPend, cedidos, prest, depUso,
+      dup: fl(/^(COD_DUP|COD_FORMATO|COD_FAMILIA|SERIE_DUP|SIN_CODIGO)$/), clas: fl(/^(CTA_INEXIST|CTA_CLASE|CTA_UMBRAL|SIN_CTA|DEN_FAMILIA)$/),
+      res: String(ac.resolucion || '').trim(), resFecha: ac.resFecha ? fmtD(ac.resFecha) : '', grupos, dig, nResp: resp.length,
+      firmas: [{ nombre: nom(/^Presidente/), cargo: 'Presidente de la Comisión de Inventario' }, { nombre: nom(/contab/i), cargo: 'Miembro - Contabilidad' }, { nombre: nom(/abastec|logíst|logist/i), cargo: 'Miembro - Abastecimiento' }] };
+  }
+  const r2x = x => Math.round((+x || 0) * 100) / 100;
+  const pad2 = n => String(n).padStart(2, '0');
+  function informeBloques() {
+    const D = informeData(), A = D.anio, N = fmtN, I = n => fmtI(n), ning = n => n ? I(n) : 'ninguno';
+    const B = [], P = (...s) => B.push({ t: 'p', s }), L = (...s) => B.push({ t: 'li', s }), H = x => B.push({ t: 'h', x }), H2 = x => B.push({ t: 'h2', x });
+    B.push({ t: 'title', x: D.ent.toUpperCase() }, { t: 'title', x: `INFORME FINAL DE INVENTARIO DE BIENES MUEBLES PATRIMONIALES ${A}` });
+    B.push({ t: 'meta', rows: [['A', 'Gerente de Administración y Finanzas u Oficina General de Administración'], ['DE', `Comisión de Inventario ${A}`], ['ASUNTO', `Informe Final del Inventario de Bienes Muebles Patrimoniales ${A}`], ['FECHA', D.fecha]] });
+    H('I. ANTECEDENTES');
+    L(['La gestión de los bienes muebles patrimoniales se desarrolla en el marco del Sistema Nacional de Abastecimiento, bajo la rectoría de la Dirección General de Abastecimiento (DGA) del Ministerio de Economía y Finanzas, conforme al Decreto Legislativo N° 1439 y su Reglamento, aprobado por Decreto Supremo N° 217-2019-EF.']);
+    L(['La Directiva N° 0006-2021-EF/54.01 regula la gestión de los bienes muebles patrimoniales, incluyendo el procedimiento anual de inventario, conciliación y acciones posteriores de regularización.']);
+    if (+A >= 2026) L([`Mediante Resolución Directoral N° 0004-2026-EF/54.01, de fecha 14 de enero de 2026, se modificaron, entre otros, los artículos 31, 32, 33, 35 y 36 de la Directiva N° 0006-2021-EF/54.01 y los Anexos N° 05, N° 06 y N° 07. Estas modificaciones entraron en vigencia el 01 de marzo de 2026 y son aplicables al procedimiento de inventario correspondiente al año fiscal ${A}.`]);
+    L([`Para el Inventario ${A}, la OGA de ${D.ent} gestiona el inventario anual con fecha de cierre al ${D.corte} y aprueba el Plan de Inventario elaborado por la Comisión dentro de los cinco (05) días hábiles de su presentación.`]);
+    L(['La Oficina de Control Patrimonial (OCP) participa como facilitador, proporcionando la información requerida por la Comisión; no puede ejercer las funciones de dicha Comisión ni integrarla por delegación o encargo.']);
+    H('II. SUSTENTO Y MODALIDAD DE VERIFICACIÓN');
+    P([`El procedimiento de inventario ${A} comprende la verificación de la totalidad de los bienes muebles patrimoniales. La verificación digital únicamente procede cuando existan causas debidamente justificadas que imposibiliten efectuar la verificación física; dichas causas deben constar en el Plan de Inventario y en el Informe Final.`]);
+    P(['Cuando se utilice verificación digital, deben emplearse herramientas tecnológicas, informáticas y medios electrónicos que permitan, como mínimo, la grabación y comunicación en línea, así como confirmar la existencia y ubicación del bien. La información obtenida tiene carácter de declaración jurada y es susceptible de revisión posterior.']);
+    P(['Modalidad aplicada: ', false], [(D.dig ? (D.dig >= D.nResp ? 'VERIFICACIÓN DIGITAL' : 'VERIFICACIÓN FÍSICA Y DIGITAL') : 'VERIFICACIÓN FÍSICA') + '.', true]);
+    P(['Justificación de la verificación digital, de corresponder: ', false], [D.dig ? `verificación digital aplicada a ${I(D.dig)} usuario(s) responsable(s) de ${I(D.nResp)}, conforme a las causas justificadas consignadas en el Plan de Inventario.` : 'NINGUNA.', true]);
+    P(['Plazo y condiciones de regularización de la identificación material, de corresponder: ', false], [D.sobr ? `${I(D.sobr)} bienes sobrantes sin código patrimonial, a regularizar conforme a la Directiva vigente.` : 'NINGUNO.', true]);
+    H('III. ACTIVIDADES DESARROLLADAS');
+    H2('3.1 FORMACIÓN DE EQUIPOS DE TRABAJO');
+    L(['Conformación de equipos: ', true], [`Se organizaron (${pad2(D.grupos || 1)}) equipos considerando el universo, sedes y plazo.`]);
+    L(['Asignación de funciones: ', true], ['Se distribuyeron funciones de verificación, identificación, registro y control de calidad.']);
+    L(['Distribución de áreas: ', true], ['Los equipos fueron asignados por sedes, unidades orgánicas y ambientes.']);
+    L(['Coordinación y supervisión: ', true], ['La Comisión estableció mecanismos para resolver incidencias y validar información.']);
+    H2('3.2 FASES DEL PROCEDIMIENTO DE INVENTARIO');
+    H2('A. PLANIFICACIÓN');
+    L(['Designación de la Comisión: ', true], [`Mediante ${D.res ? D.res.toUpperCase() : 'RESOLUCIÓN N° ________'}${D.resFecha ? `, de fecha ${D.resFecha}` : ''}, la OGA designó titulares y accesitarios. La Comisión está constituida, como mínimo, por representantes de la OGA, Contabilidad y Abastecimiento, cada uno con su accesitario.`]);
+    L(['Plan de Inventario: ', true], ['La Comisión elaboró y presentó el Plan dentro de los diez (10) días hábiles de notificada su designación. El Plan incorporó cronograma por fases, recursos, sedes, equipos y la asignación, gestión y mitigación de riesgos.']);
+    L(['Aprobación del Plan: ', true], ['La OGA aprobó el Plan de trabajo para el desarrollo del inventario, dentro de los cinco (05) días hábiles de su presentación.']);
+    L(['Reconocimiento de ambientes: ', true], ['Se identificaron sedes, oficinas, almacenes y demás ambientes para definir rutas y responsabilidades.']);
+    L(['Comunicación institucional: ', true], ['Se gestionó la comunicación a todas las unidades orgánicas sobre la fecha de inicio de la fase de trabajo de campo.']);
+    H2('B. FASE DE TRABAJO DE CAMPO');
+    L(['Verificación de bienes: ', true], ['Se verificó existencia, ubicación, usuario responsable, características y estado de conservación de los bienes patrimoniales.']);
+    L(['Registro de información: ', true], [`Los datos fueron registrados en la Ficha de Levantamiento de Información (inventario físico) conforme al Anexo N° 07${+A >= 2026 ? ' modificado por la R.D. N° 0004-2026-EF/54.01' : ''}.`]);
+    L(['Identificación material: ', true], [`Luego de la verificación se identificaron los bienes mediante etiquetas autoidentificativas. El símbolo contiene como mínimo el año del inventario (${A}) y el nombre de la entidad o sus siglas, se conserva hasta por dos (02) años y no sustituye el símbolo material patrimonial regulado por la Directiva vigente.`]);
+    L(['Incidencias: ', true], ['Se registraron bienes no ubicados, sobrantes, sin código, con códigos duplicados, en estado malo, RAEE, dados de baja pendientes de disposición y otras diferencias que se detallan en los reportes correspondientes.']);
+    H2('C. FASE DE GABINETE');
+    L(['Validación: ', true], ['Se revisó la consistencia de los datos y su correspondencia con registros administrativos y patrimoniales.']);
+    L(['Códigos y clasificación: ', true], ['Se evaluaron códigos, denominaciones, grupo, clase, familia, cuenta contable y demás atributos.']);
+    L(['Determinación de diferencias: ', true], ['Se identificaron faltantes, sobrantes, duplicidades, registros erróneos y otras diferencias.']);
+    L(['Conciliación patrimonio-contable: ', true], ['Se comparó el inventario físico valorizado con los saldos contables a nivel de valores netos en libros y se procedió con la explicación de las diferencias existentes.']);
+    L(['Documentación final: ', true], ['Se elaboraron el Informe Final y el Acta de Conciliación de Inventario.']);
+    H2('3.3 OBTENCIÓN Y CONCILIACIÓN DE LA INFORMACIÓN CONTABLE');
+    P([`Culminado el levantamiento y la validación patrimonial, se efectuó la conciliación patrimonio-contable. Los importes definitivos tomados en cuenta son al cierre del ejercicio ${A}, en este caso con los saldos al ${D.corte} y el inventario físico valorizado.`]);
+    const den = { '1503': '1503 - Vehículos, Maquinarias y Otros', '9105': '9105 - Cuentas de orden / según corresponda' };
+    const tB = D.cn.reduce((s, r) => s + r.b, 0), tC = D.cn.reduce((s, r) => s + r.c, 0), tD = r2x(tB - tC);
+    B.push({ t: 'table', cols: [{ h: 'CUENTA CONTABLE', w: 3.2 }, { h: `SALDO CONTABLE ${D.corte}`, w: 2.6, a: 'r' }, { h: 'INVENTARIO FÍSICO VALORIZADO', w: 2.6, a: 'r' }, { h: 'DIFERENCIA', w: 2.4, a: 'r' }],
+      rows: D.cn.map(r => [den[r.p], N(r.b), N(r.c), N(r.d)]), tot: ['TOTALES', N(tB), N(tC), N(tD)] });
+    H2('Análisis del resumen contable');
+    const [c1, c9] = D.cn, [v1, v9] = D.val, ok = x => Math.abs(x) < 0.01;
+    P(['Cuenta 1503. ', true], [`El importe de S/ ${N(c1.c)} del cuadro comparativo coincide con el valor inicial del detalle (${I(v1.n)} bienes). La depreciación acumulada asciende a S/ ${N(v1.da)} y el valor neto patrimonial a S/ ${N(v1.vn)}. ` + (!D.bal ? 'No se ha cargado el Balance SIAF: el saldo contable figura en cero hasta su importación.' : ok(c1.d) ? `El saldo contable de S/ ${N(c1.b)} coincide con el inventario físico valorizado; la cuenta se encuentra conciliada.` : `Contabilidad debe confirmar si el saldo de S/ ${N(c1.b)} representa costo o valor neto y, con esa base, determinar la diferencia conciliable de S/ ${N(c1.d)}.`)]);
+    P(['Cuenta 9105. ', true], [`Verificar la composición de los ${I(v9.n)} registros y el sustento de ` + (ok(c9.d) ? 'su saldo, que se encuentra conciliado. ' : `la diferencia de S/ ${N(Math.abs(c9.d))} en valor absoluto. `) + 'Documentar el resultado de esta cuenta de orden por separado de la cuenta 1503.']);
+    P(['Cobertura y sustento. ', true], [`Cotejar los ${I(v1.n + v9.n)} registros de la valorización con los ${I(D.total)} casos del consolidado físico mediante una relación por código, cuenta y condición. Para cada diferencia validada, documentar los bienes afectados, el importe, la causa acreditada y la acción que corresponda.`]);
+    H2('Valorización de bienes patrimoniales');
+    B.push({ t: 'table', cols: [{ h: 'CLASIFICACIÓN / CUENTA', w: 2.4 }, { h: 'CANTIDAD', w: 1.6, a: 'c' }, { h: 'VALOR INICIAL', w: 2.3, a: 'r' }, { h: 'DEP. ACUMULADA', w: 2.3, a: 'r' }, { h: 'VALOR NETO', w: 2.3, a: 'r' }],
+      rows: D.val.map(r => [r.p, I(r.n), N(r.vi), N(r.da), N(r.vn)]), tot: ['TOTALES', I(v1.n + v9.n), N(v1.vi + v9.vi), N(v1.da + v9.da), N(v1.vn + v9.vn)] });
+    H2('3.4 OTRAS ACTIVIDADES');
+    L(['Capacitación: ', true], ['Se brindaron orientaciones sobre objetivos, metodología, registro, estado, ubicación, responsables y tratamiento de incidencias.']);
+    L(['Control de calidad: ', true], ['Se revisó la consistencia de la información antes del cierre de gabinete.']);
+    H('IV. ANÁLISIS DE LOS RESULTADOS');
+    H2('4.1 RESULTADOS OBTENIDOS');
+    L(['Bienes ubicados y conciliados: ', true], [I(D.ubic) + '.', true]);
+    L(['Bienes no ubicados (faltantes): ', true], [I(D.falt) + '.', true]);
+    L(['Bienes sobrantes: ', true], [I(D.sobr) + '.', true]);
+    L(['Bienes en estado malo / propuestos para baja: ', true], [I(D.malos) + '.', true]);
+    L(['Bienes RAEE: ', true], [I(D.raee) + '.', true]);
+    L(['Bienes dados de baja pendientes de disposición: ', true], [ning(D.bajaPend) + '.', true], [' Estos bienes se verifican en el inventario y el resultado debe constar en el Informe Final.']);
+    L(['Bienes afectados o cedidos en uso: ', true], [ning(D.cedidos) + '.', true]);
+    L(['Bienes prestados por otras entidades: ', true], [ning(D.prest) + '.', true]);
+    L(['Bienes totalmente depreciados que continúan en uso: ', true], [ning(D.depUso) + '.', true]);
+    L(['Duplicidad o inconsistencias de código: ', true], [ning(D.dup) + '.', true]);
+    L(['Bienes con clasificación o cuenta contable incorrecta: ', true], [ning(D.clas) + '.', true]);
+    H2('4.2 TRATAMIENTO DE BIENES SOBRANTES');
+    P(['No se efectúa saneamiento administrativo de los bienes sobrantes calificados como RAEE ni de aquellos que, independientemente de su estado, no resulten útiles para las funciones u objetivos de la entidad. Para estos últimos, la OCP sustenta mediante Informe Técnico la situación y el acto de disposición que corresponda, iniciando el trámite respectivo.']);
+    H2(`4.3 RESUMEN FINAL DEL INVENTARIO FÍSICO ${A}`);
+    B.push({ t: 'table', cols: [{ h: 'DETALLE', w: 7 }, { h: 'CANTIDAD', w: 3, a: 'c' }], rows: [['Bienes ubicados físicamente y conciliados', I(D.ubic)], ['Bienes no ubicados físicamente (faltantes)', I(D.falt)], ['Bienes sobrantes', I(D.sobr)]], tot: ['TOTAL DE BIENES VERIFICADOS / EVALUADOS', I(D.total)] });
+    H('V. CONCLUSIONES');
+    L([`El Inventario de Bienes Muebles Patrimoniales ${A} de ${D.ent} se ejecutó con fecha de cierre al ${D.corte}, conforme a la Directiva N° 0006-2021-EF/54.01${+A >= 2026 ? ` y a las modificaciones aplicables al inventario ${A} introducidas por la R.D. N° 0004-2026-EF/54.01` : ''}.`]);
+    L([`La Comisión desarrolló las fases de planificación, trabajo de campo y gabinete y consolidó la información necesaria para la conciliación patrimonio-contable hasta la presentación del inventario final que corresponde al ejercicio fiscal ${A}.`]);
+    L([`El universo patrimonial asciende a ${I(D.total)} bienes; se ubicaron ${I(D.ubic)}, se determinaron ${I(D.falt)} faltantes y ${I(D.sobr)} sobrantes.`]);
+    L([ok(tD) ? 'No se identificaron diferencias patrimonio-contables netas entre los saldos contables y el inventario físico valorizado.' : `Las diferencias patrimonio-contables identificadas ascienden a S/ ${N(Math.abs(tD))} (${tD < 0 ? 'el inventario físico valorizado supera al saldo contable' : 'el saldo contable supera al inventario físico valorizado'}), correspondiendo ejecutar acciones administrativas y contables debidamente sustentadas.`]);
+    if (D.bajaPend) L([`Se verificaron ${I(D.bajaPend)} bienes dados de baja cuya disposición se encuentra pendiente, dejándose constancia del resultado en el presente Informe Final.`]);
+    L(['El Informe Final y el Acta de Conciliación son los documentos de cierre que la OCP debe registrar en el Módulo de Patrimonio del SIGA MEF.']);
+    H('VI. RECOMENDACIONES');
+    L([`Registrar el Informe Final y el Acta de Conciliación de Inventario en el Módulo de Patrimonio del SIGA MEF o SINABIP. El cumplimiento se acredita con el sustento de inventario que expide el SIGA MEF o SINABIP y se efectúa hasta el 28 de febrero de ${+A + 1}; si el plazo vence en día inhábil, se prorroga al primer día hábil siguiente. El plazo es perentorio y no está sujeto a prórroga.`]);
+    L(['Antes del registro, verificar que el Informe Final y el Acta de Conciliación estén completos y que la verificación haya comprendido la totalidad de los bienes muebles patrimoniales, pues la DGA puede tener por no registrado el inventario cuando advierta incumplimiento.']);
+    L(['Dentro de treinta (30) días hábiles contados desde el registro del inventario, la OCP debe evaluar las recomendaciones del Informe Final y elaborar el Plan de Ejecución de Recomendaciones, remitiéndolo a la OGA para su aprobación dentro de cinco (05) días hábiles.']);
+    L(['El Plan de Ejecución de Recomendaciones debe contener como mínimo objetivo, cronograma y recursos; su ejecución corresponde a la OCP dentro del año en que se registró el inventario.']);
+    L(['La OGA debe efectuar el seguimiento y supervisión del cumplimiento del Plan de Ejecución de Recomendaciones.']);
+    L(['Priorizar la regularización de faltantes, sobrantes, duplicidades, errores de codificación y clasificación, y diferencias patrimonio-contables mediante expedientes e informes técnicos.']);
+    L(['Aplicar a los bienes sobrantes RAEE o no útiles el tratamiento específico previsto por la Directiva, evitando el saneamiento administrativo cuando corresponda una excepción normativa.']);
+    L(['Fortalecer la calidad y consistencia de la información del SIGA MEF - Módulo de Patrimonio y su correspondencia con la información contable.']);
+    H('VII. DOCUMENTOS QUE FORMAN PARTE DEL INFORME FINAL');
+    ['Anexo N.° 07 - Fichas de Levantamiento de Información.', `Relación consolidada de bienes ubicados ${A}.`, 'Relación de bienes faltantes.', 'Relación de bienes sobrantes.', 'Relación de bienes en estado malo, obsoletos y/o propuestos para baja.', 'Relación de bienes RAEE, de corresponder.', 'Relación de bienes dados de baja pendientes de disposición.', 'Relación de bienes totalmente depreciados que continúan en uso, de corresponder.', 'Reportes de inconsistencias, duplicidades, reclasificaciones y correcciones.', 'Cuadros de valorización y conciliación patrimonio-contable.', `Acta de Conciliación de Inventario ${A}.`, 'Documentación de sustento de verificación digital, de corresponder.'].forEach(x => L([x]));
+    P([`Por lo expuesto, se eleva a su despacho el presente Informe Final del Inventario de Bienes Muebles Patrimoniales correspondiente al ejercicio fiscal ${A}, para las acciones administrativas, patrimoniales y contables que correspondan.`]);
+    P(['Atentamente;']);
+    B.push({ t: 'sign', items: D.firmas });
+    return { B, D };
+  }
+  const segTxt = s => s.map(x => x[0]).join('');
+
   function informePdf(pdf) {
-    const k = KPI(), c = CONC(), cr = CRUCE(), v = VAL(), cnt = {}; v.forEach(x => x.f.forEach(f => cnt[f] = (cnt[f] || 0) + 1));
-    const est = {}; S.inv.forEach(b => est[b.estado] = (est[b.estado] || 0) + 1);
-    const t1503 = c.rows.find(r => r.cod === '1503'), t9105 = c.rows.find(r => r.cod === '9105');
-    pdf.landscape = false; pdf.W = 595; pdf.H = 842; pdf.addPage(); pdf.header('INFORME FINAL DEL INVENTARIO FÍSICO DE BIENES PATRIMONIALES', `Ejercicio ${per()} · Fecha de corte ${corteTxt()}`);
-    const P = (t, o) => pdf.para(t, 9, o);
-    P('I. ANTECEDENTES', { bold: true, gap: 2 });
-    P(`La Comisión de Inventario de ${ent()} realizó la toma de inventario físico de los bienes muebles patrimoniales al ${corteTxt()}, en el marco de la Directiva N° 0006-2021-EF/54.01 y normas de la Dirección General de Contabilidad Pública sobre conciliación patrimonio-contable.`);
-    P('II. RESULTADOS DEL INVENTARIO FÍSICO', { bold: true, gap: 2 });
-    pdf.table([{ h: 'Concepto', w: 12 }, { h: 'Cantidad / Importe', w: 6, a: 'r' }], [
-      ['Bienes inventariados', fmtI(k.n)], ['Valor de adquisición total (S/)', fmtN(k.v)], [`Depreciación del ejercicio ${per()} (S/)`, fmtN(k.e)], ['Depreciación acumulada (S/)', fmtN(k.a)], ['Valor neto (S/)', fmtN(k.neto)],
-      ...ENG.ESTADOS.map(e => [`Bienes en estado ${e.toLowerCase()}`, fmtI(est[e] || 0)]),
-      ['Bienes faltantes (registrados en SIGA MP y no ubicados)', fmtI(cr.faltantes.length)], ['Bienes sobrantes (inventariados sin código patrimonial)', fmtI(cr.sobrantes.length)]
-    ], { title: 'INFORME FINAL', size: 8 });
-    P('III. CONCILIACIÓN PATRIMONIO-CONTABLE', { bold: true, gap: 2 });
-    pdf.table([{ h: 'Cuenta', w: 3 }, { h: 'Contable (b)', w: 5, a: 'r', fmt: fmtN }, { h: 'Inventario (c)', w: 5, a: 'r', fmt: fmtN }, { h: 'Diferencia (b-c)', w: 5, a: 'r', fmt: fmtN }], [t1503, t9105].filter(Boolean).map(r => [r.cod, r.b, r.c, r.d]).concat(c.dep.map(d => [d.cod, d.b, d.c, d.d])), { title: 'INFORME FINAL', size: 8 });
-    P('IV. OBSERVACIONES DEL GABINETE', { bold: true, gap: 2 });
-    const obs = Object.entries(cnt); pdf.table([{ h: 'Observación', w: 14 }, { h: 'Bienes', w: 4, a: 'r' }], obs.length ? obs.map(([f, n]) => [ENG.FLAGS[f][0], fmtI(n)]) : [['Sin observaciones', '0']], { title: 'INFORME FINAL', size: 8 });
-    P('V. CONCLUSIONES Y RECOMENDACIONES', { bold: true, gap: 2 });
-    P(`1. El valor contable de la cuenta 1503 asciende a S/ ${fmtN(t1503?.b)} y el inventario valorizado a S/ ${fmtN(t1503?.c)}, con una diferencia de S/ ${fmtN(t1503?.d)} que debe sanearse mediante las notas contables propuestas.`);
-    P(`2. Se identificaron ${fmtI(cr.faltantes.length)} bienes faltantes y ${fmtI(cr.sobrantes.length)} sobrantes sin código patrimonial; se recomienda el deslinde de responsabilidades y el alta respectiva conforme a la normativa del SNA.`);
-    P(`3. Se recomienda la baja de ${fmtI((est.MALO || 0) + (est.CHATARRA || 0) + (est.RAEE || 0))} bienes en estado malo, chatarra o RAEE, previo informe técnico.`);
-    P('4. Registrar las correcciones de cuentas y reclasificaciones por umbral (1/8 UIT hasta 2015; 1/4 UIT desde 2016) antes del cierre contable.');
-    const com = S.cfg.comision?.length ? S.cfg.comision : [{ rol: 'Presidente', cargo: '' }, { rol: 'Miembro', cargo: '' }, { rol: 'Miembro', cargo: '' }];
-    pdf.signatures(com.slice(0, 3).map(m => `${m.rol}${m.nombre ? ': ' + m.nombre : ''}`));
+    const { B } = informeBloques(), K = [0, 0, 0], G = [0.35, 0.37, 0.42], HD = [0.85, 0.89, 0.95], LN = [0.25, 0.25, 0.3], FS = 10;
+    pdf.landscape = false; pdf.W = 595; pdf.H = 842; pdf.m = 62; pdf.addPage(); const W = pdf.W - 2 * pdf.m, BOT = pdf.H - 54;
+    const need = h => { if (pdf.y + h > BOT) { pdf.addPage(); pdf.y = 50; } };
+    const wr = (t, w, sz, b) => { const out = []; let cur = ''; for (const wd of String(t ?? '').split(/\s+/)) { const tt = cur ? cur + ' ' + wd : wd; if (LIB.textWidth(tt, sz, b) > w && cur) { out.push(cur); cur = wd; } else cur = tt; } if (cur) out.push(cur); return out.length ? out : ['']; };
+    if (pdf.logo) pdf.logoAt(pdf.m, 34, 36);
+    pdf.y = 44;
+    B.forEach((b, bi) => {
+      if (b.t === 'title') { const ls = wr(b.x, W, 12, true); need(ls.length * 16 + 6); ls.forEach(l => { pdf.text(pdf.W / 2, pdf.y + 12, l, 12, { bold: true, align: 'center', color: K }); pdf.y += 16; }); pdf.y += B[bi + 1]?.t === 'title' ? 2 : 12; }
+      else if (b.t === 'meta') { const w1 = W * 0.22; b.rows.forEach(([k2, v2]) => { const ls = wr(v2, W - w1 - 16, FS, false), h = ls.length * 13 + 9; need(h); pdf.rect(pdf.m, pdf.y, w1, h, [0.95, 0.96, 0.98], LN, 0.5); pdf.rect(pdf.m + w1, pdf.y, W - w1, h, null, LN, 0.5); pdf.text(pdf.m + 8, pdf.y + 4 + 11, k2, FS, { bold: true, color: K }); ls.forEach((l, j) => pdf.text(pdf.m + w1 + 8, pdf.y + 4 + 11 + j * 13, l, FS, { color: K })); pdf.y += h; }); pdf.y += 16; }
+      else if (b.t === 'h') { need(40); pdf.y += 6; pdf.text(pdf.m, pdf.y + 11, b.x, 11, { bold: true, color: K }); pdf.y += 20; }
+      else if (b.t === 'h2') { need(36); pdf.y += 2; pdf.text(pdf.m, pdf.y + 10, b.x, FS, { bold: true, color: K }); pdf.y += 17; }
+      else if (b.t === 'p') { need(16); pdf.richPara(b.s.map(x => [x[0], !!x[1]]), FS, { color: K, lead: 4, gap: 6 }); }
+      else if (b.t === 'li') { need(16); const ind = 22; pdf.ellipse(pdf.m + 10, pdf.y + FS - 3.2, 1.7, 1.7, null, 0, K); pdf.richPara(b.s.map(x => [x[0], !!x[1]]), FS, { color: K, x: pdf.m + ind, width: W - ind, lead: 4, gap: 5 }); }
+      else if (b.t === 'table') {
+        const tw = b.cols.reduce((s, c2) => s + c2.w, 0), ws = b.cols.map(c2 => c2.w / tw * W), fs = 9, lh = 11.5;
+        const row = (cells, bold, fill) => { const ls = cells.map((v2, i) => wr(v2, ws[i] - 8, fs, bold)), h = Math.max(...ls.map(l => l.length)) * lh + 8; need(h); let x = pdf.m;
+          cells.forEach((v2, i) => { pdf.rect(x, pdf.y, ws[i], h, fill, LN, 0.5); const a = bold && fill === HD ? 'c' : (b.cols[i].a || 'l'); ls[i].forEach((l, j) => { const yy = pdf.y + (h - ls[i].length * lh) / 2 + (j + 1) * lh - 2.5; pdf.text(a === 'r' ? x + ws[i] - 5 : a === 'c' ? x + ws[i] / 2 : x + 5, yy, l, fs, { bold, color: K, align: a === 'r' ? 'right' : a === 'c' ? 'center' : undefined }); }); x += ws[i]; }); pdf.y += h; };
+        need(Math.min(BOT - 60, (b.rows.length + 2) * 30 + 10)); row(b.cols.map(c2 => c2.h), true, HD); b.rows.forEach(r => row(r, false, null)); if (b.tot) row(b.tot, true, [0.96, 0.96, 0.96]); pdf.y += 12; }
+      else if (b.t === 'sign') { need(110); pdf.y += 52; const n = b.items.length, w = W / n; b.items.forEach((s, i) => { const cx = pdf.m + w * i + w / 2; pdf.line(cx - w * 0.42, pdf.y, cx + w * 0.42, pdf.y, LN, 0.6); let yy = pdf.y + 11; if (s.nombre) { wr(s.nombre.toUpperCase(), w * 0.86, 8, true).forEach(l => { pdf.text(cx, yy, l, 8, { bold: true, align: 'center', color: K }); yy += 10; }); } wr(s.cargo, w * 0.86, 8, !s.nombre).forEach(l => { pdf.text(cx, yy, l, 8, { bold: !s.nombre, align: 'center', color: K }); yy += 10; }); }); pdf.y += 46; }
+    });
+  }
+
+  /* Word (.docx) del mismo contenido: Arial 11, A4, márgenes de 2.5 cm */
+  function informeDocx() {
+    const { B } = informeBloques(), X = s => String(s ?? '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const run = (t, b, sz = 22) => `<w:r><w:rPr>${b ? '<w:b/>' : ''}<w:sz w:val="${sz}"/><w:szCs w:val="${sz}"/></w:rPr><w:t xml:space="preserve">${X(t)}</w:t></w:r>`;
+    const par = (runs, o = {}) => `<w:p><w:pPr>${o.keep ? '<w:keepNext/>' : ''}<w:spacing w:before="${o.before || 0}" w:after="${o.after ?? 120}" w:line="276" w:lineRule="auto"/>${o.ind ? `<w:ind w:left="${o.ind}" w:hanging="${o.hang || 0}"/>` : ''}<w:jc w:val="${o.jc || 'both'}"/></w:pPr>${runs}</w:p>`;
+    const bd = '<w:tblBorders>' + ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'].map(s => `<w:${s} w:val="single" w:sz="4" w:space="0" w:color="404040"/>`).join('') + '</w:tblBorders>';
+    const cell = (t, w, o = {}) => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/>${o.fill ? `<w:shd w:val="clear" w:color="auto" w:fill="${o.fill}"/>` : ''}<w:vAlign w:val="center"/></w:tcPr>${par(run(t, o.b, o.sz || 20), { after: 0, jc: o.jc || 'left', before: 0 })}</w:tc>`;
+    const tbl = (rows, ws, noBorder) => `<w:tbl><w:tblPr><w:tblW w:w="${ws.reduce((a, b) => a + b, 0)}" w:type="dxa"/><w:jc w:val="center"/>${noBorder ? '' : bd}<w:tblLayout w:type="fixed"/><w:tblCellMar><w:top w:w="50" w:type="dxa"/><w:left w:w="90" w:type="dxa"/><w:bottom w:w="50" w:type="dxa"/><w:right w:w="90" w:type="dxa"/></w:tblCellMar></w:tblPr><w:tblGrid>${ws.map(w => `<w:gridCol w:w="${w}"/>`).join('')}</w:tblGrid>${rows.map(r => `<w:tr><w:trPr><w:cantSplit/></w:trPr>${r}</w:tr>`).join('')}</w:tbl>`;
+    const TW = 9070, JC = { r: 'right', c: 'center', l: 'left' }; let body = '';
+    B.forEach((b, i) => {
+      if (b.t === 'title') body += par(run(b.x, true, 24), { jc: 'center', after: B[i + 1]?.t === 'title' ? 60 : 240 });
+      else if (b.t === 'meta') body += tbl(b.rows.map(([k, v]) => cell(k, 2000, { b: true, fill: 'F2F4F8', sz: 22 }) + cell(v, TW - 2000, { sz: 22 })), [2000, TW - 2000]) + par('', { after: 120 });
+      else if (b.t === 'h') body += par(run(b.x, true, 22), { before: 200, after: 120, jc: 'left', keep: true });
+      else if (b.t === 'h2') body += par(run(b.x, true, 22), { before: 120, after: 100, jc: 'left', keep: true });
+      else if (b.t === 'p') body += par(b.s.map(x => run(x[0], x[1])).join(''));
+      else if (b.t === 'li') body += par(run('•\t', true) + b.s.map(x => run(x[0], x[1])).join(''), { ind: 720, hang: 360, after: 80 });
+      else if (b.t === 'table') { const tw = b.cols.reduce((s, c) => s + c.w, 0), ws = b.cols.map(c => Math.round(c.w / tw * TW));
+        const rows = [b.cols.map((c, j) => cell(c.h, ws[j], { b: true, fill: 'D9E2F3', jc: 'center' })).join('')].concat(b.rows.map(r => r.map((v, j) => cell(v, ws[j], { jc: JC[b.cols[j].a || 'l'] })).join('')));
+        if (b.tot) rows.push(b.tot.map((v, j) => cell(v, ws[j], { b: true, fill: 'F2F2F2', jc: JC[b.cols[j].a || 'l'] })).join(''));
+        body += tbl(rows, ws) + par('', { after: 120 }); }
+      else if (b.t === 'sign') { const w = Math.floor(TW / b.items.length); body += par('', { after: 600 }) + tbl([b.items.map(s => `<w:tc><w:tcPr><w:tcW w:w="${w}" w:type="dxa"/></w:tcPr>${par(run('______________________________', false, 20), { jc: 'center', after: 0 })}${s.nombre ? par(run(s.nombre.toUpperCase(), true, 18), { jc: 'center', after: 0 }) : ''}${par(run(s.cargo, !s.nombre, 18), { jc: 'center', after: 0 })}</w:tc>`).join('')], b.items.map(() => w), true); }
+    });
+    const ns = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
+    const ftr = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:ftr ${ns}><w:p><w:pPr><w:jc w:val="right"/></w:pPr><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:t xml:space="preserve">${X(ent())} · Informe Final de Inventario ${per()} · Página </w:t></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:rPr><w:sz w:val="16"/></w:rPr><w:fldChar w:fldCharType="end"/></w:r></w:p></w:ftr>`;
+    const doc = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document ${ns}><w:body>${body}<w:sectPr><w:footerReference w:type="default" r:id="rIdF"/><w:pgSz w:w="11906" w:h="16838"/><w:pgMar w:top="1418" w:right="1418" w:bottom="1418" w:left="1418" w:header="709" w:footer="567" w:gutter="0"/></w:sectPr></w:body></w:document>`;
+    const sty = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:styles ${ns}><w:docDefaults><w:rPrDefault><w:rPr><w:rFonts w:ascii="Arial" w:hAnsi="Arial" w:eastAsia="Arial" w:cs="Arial"/><w:sz w:val="22"/><w:szCs w:val="22"/><w:lang w:val="es-PE"/></w:rPr></w:rPrDefault><w:pPrDefault><w:pPr><w:spacing w:after="120"/></w:pPr></w:pPrDefault></w:docDefaults><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style></w:styles>`;
+    return LIB.zip([
+      { name: '[Content_Types].xml', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/><Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/><Override PartName="/word/footer1.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.footer+xml"/></Types>' },
+      { name: '_rels/.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>' },
+      { name: 'word/_rels/document.xml.rels', data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdS" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/><Relationship Id="rIdF" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/footer" Target="footer1.xml"/></Relationships>' },
+      { name: 'word/document.xml', data: doc }, { name: 'word/styles.xml', data: sty }, { name: 'word/footer1.xml', data: ftr }]);
+  }
+
+  /* Excel del mismo contenido: una hoja A4 vertical, 5 columnas */
+  function informeXlsx() {
+    const { B } = informeBloques(), rows = [], merges = [], CW = [34, 20, 20, 20, 20], TOT = CW.reduce((a, b) => a + b, 0);
+    const S0 = { f: 'n12', b: 0, a: 'l', wrap: true }, SB = { ...S0, f: 'b12' }, BD = { f: 'n12', b: 1, wrap: true }, BH = { f: 'b12', b: 1, wrap: true, a: 'c', fill: 'sub' }, BT = { f: 'b12', b: 1, wrap: true, fill: 'tot' };
+    const hgt = (t, w) => Math.max(18, Math.ceil(String(t).length / Math.max(8, w * 0.82)) * 17 + 6);
+    const full = (t, s, h) => { rows.push({ h: h || hgt(t, TOT), cells: [{ v: t, s }] }); merges.push(`A${rows.length}:E${rows.length}`); };
+    B.forEach(b => {
+      if (b.t === 'title') full(b.x, { ...SB, f: 't14', a: 'c' }, 24);
+      else if (b.t === 'meta') { rows.push({ h: 8, cells: [] }); b.rows.forEach(([k, v]) => { rows.push({ h: hgt(v, TOT - CW[0]), cells: [{ v: k, s: { ...BD, f: 'b12', fill: 'sub' } }, { v, s: BD }, { v: '', s: BD }, { v: '', s: BD }, { v: '', s: BD }] }); merges.push(`B${rows.length}:E${rows.length}`); }); rows.push({ h: 8, cells: [] }); }
+      else if (b.t === 'h') full(b.x, SB, 24);
+      else if (b.t === 'h2') full(b.x, SB, 20);
+      else if (b.t === 'p') full(segTxt(b.s), { ...S0, a: 'j' });
+      else if (b.t === 'li') full('•  ' + segTxt(b.s), { ...S0, a: 'j' });
+      else if (b.t === 'table') { const two = b.cols.length === 2, put = (cells, st, al) => { if (two) { rows.push({ h: hgt(cells[0], 90), cells: [{ v: cells[0], s: st(0) }, { v: '', s: st(0) }, { v: '', s: st(0) }, { v: '', s: st(0) }, { v: cells[1], s: st(1) }] }); merges.push(`A${rows.length}:D${rows.length}`); } else rows.push({ h: Math.max(...cells.map((c, i) => hgt(c, CW[i]))), cells: cells.map((v, i) => ({ v, s: st(i) })) }); };
+        const al = i => ({ r: 'r', c: 'c', l: 'l' })[b.cols[i].a || 'l'];
+        put(b.cols.map(c => c.h), () => BH); b.rows.forEach(r => put(r, i => ({ ...BD, a: al(i) }))); if (b.tot) put(b.tot, i => ({ ...BT, a: al(i) })); rows.push({ h: 8, cells: [] }); }
+      else if (b.t === 'sign') { rows.push({ h: 50, cells: [] }); rows.push({ h: 18, cells: b.items.flatMap((s, i) => [{ v: '______________________', s: { ...S0, a: 'c' } }, ...(i < 2 ? [{ v: '' }] : [])]) });
+        rows.push({ h: 34, cells: b.items.flatMap((s, i) => [{ v: (s.nombre ? s.nombre.toUpperCase() + '\n' : '') + s.cargo, s: { ...SB, a: 'c', f: 'b12' } }, ...(i < 2 ? [{ v: '' }] : [])]) }); }
+    });
+    return [{ name: 'INFORME FINAL', cols: CW, rows, merges, portrait: true, paper: 9 }];
   }
 
   /* ---- Acta de Conciliación Anexo 05 · formato FINAL (11 columnas A–K) ----
@@ -3184,7 +3365,7 @@ const REP = (() => {
       cols: CONS_ALTA.map(c => ({ h: consHdr(c[1] ? c[0] + ' · ' + c[1] : c[0]), wx: c[3] })), rows: () => CFG_ALTA.rows(l), xlsx: () => consAreaXlsx(l, CFG_ALTA), pdf: p => consAreaPdf(p, l, CFG_ALTA) }; },
     acta: () => ({ title: 'ACTA DE CONCILIACIÓN', file: 'ACTA_CONCILIACION_PATRIMONIO_CONTABLE', sub: 'Anexo Nº 05', portrait: true, cols: [], rows: () => [], xlsx: acta5Xlsx, pdf: acta5Pdf }),
     actaResumen: () => ({ title: 'ACTA DE CONCILIACIÓN (RESUMEN)', file: 'ACTA_CONCILIACION_RESUMEN', sub: 'Anexo Nº 05', portrait: true, cols: [], rows: () => [], xlsx: actaXlsx, pdf: actaPdf }),
-    informe: () => ({ title: 'INFORME FINAL', file: 'INFORME_FINAL_INVENTARIO', portrait: true, cols: [{ h: 'Concepto', wx: 50 }, { h: 'Valor', x: 'num', wx: 18 }], rows: () => { const k = KPI(), c = CONC(), cr = CRUCE(); return [['Bienes inventariados', k.n], ['Valor de adquisición', k.v], ['Depreciación del ejercicio', k.e], ['Depreciación acumulada', k.a], ['Valor neto', k.neto], ['Faltantes', cr.faltantes.length], ['Sobrantes', cr.sobrantes.length], ...c.rows.filter(r => r.t === 'T').map(r => [`Diferencia cuenta ${r.cod} (contable − inventario)`, r.d]), ...c.dep.map(d => [`Diferencia ${d.cod}`, d.d])]; }, pdf: informePdf }),
+    informe: () => ({ title: 'INFORME FINAL', file: 'INFORME_FINAL_INVENTARIO', portrait: true, cols: [{ h: 'Concepto', wx: 50 }, { h: 'Valor', x: 'num', wx: 18 }], rows: () => { const k = KPI(), c = CONC(), cr = CRUCE(); return [['Bienes inventariados', k.n], ['Valor de adquisición', k.v], ['Depreciación del ejercicio', k.e], ['Depreciación acumulada', k.a], ['Valor neto', k.neto], ['Faltantes', cr.faltantes.length], ['Sobrantes', cr.sobrantes.length], ...c.rows.filter(r => r.t === 'T').map(r => [`Diferencia cuenta ${r.cod} (contable − inventario)`, r.d]), ...c.dep.map(d => [`Diferencia ${d.cod}`, d.d])]; }, pdf: informePdf, xlsx: informeXlsx, docx: informeDocx }),
     umbral: () => { const r = REPORTS.observaciones('CTA_UMBRAL'); return { ...r, title: 'REPORTE DE BIENES REGISTRADOS SIN APLICACIÓN DEL UMBRAL', file: 'BIENES_SIN_APLICACION_UMBRAL' }; },
     correccion: () => { const l = S.inv.filter(b => b.ctaCorr && b.cta && b.ctaCorr !== b.cta).sort((a, b) => String(a.cta).localeCompare(String(b.cta)) || String(a.cod).localeCompare(String(b.cod)));
       return { title: 'REPORTE DE BIENES CON CORRECCIÓN DE CUENTAS', file: 'BIENES_CORRECCION_CUENTAS', sub: `PERIODO ${per()} · ${fmtI(l.length)} bienes · ${money(l.reduce((t, b) => t + (+b.valor || 0), 0))}`,
@@ -3879,7 +4060,7 @@ let CUR = 'home', openMods = new Set(['cfg', 'inv', 'san']);
 /* El nombre del módulo y del menú se muestran en la barra superior (izquierda); el encabezado de la vista conserva la descripción */
 const hero = (m, s, desc, rep, arg) => `<section class="hero hero-sm" style="--c:var(${m.c})"><div class="hero-txt"><p>${desc}</p></div>${rep && m.id !== 'cfg' && s.id !== 'conciliacion' ? exportBar(rep, arg) : ''}</section>`; // Configuración: sin botones Excel / Vista PDF / Imprimir en el encabezado
 const exportBar = (rep, arg = '') => `<div class="exports"><button class="xbtn" style="--k:var(--xls)" data-x="xlsx" data-rep="${rep}" data-arg="${h(arg)}">${ic('file-spreadsheet')}Excel</button><button class="xbtn" style="--k:var(--pdf)" data-x="view" data-rep="${rep}" data-arg="${h(arg)}">${ic('eye')}Vista PDF</button><button class="xbtn" style="--k:var(--prt)" data-x="print" data-rep="${rep}" data-arg="${h(arg)}">${ic('printer')}Imprimir</button></div>`;
-const tools = (rep, arg = '') => `<div class="act-tools"><button class="tool" style="--k:var(--xls)" data-x="xlsx" data-rep="${rep}" data-arg="${h(arg)}" title="Descargar en Excel">${ic('file-spreadsheet')}Excel</button><button class="tool" style="--k:var(--pdf)" data-x="view" data-rep="${rep}" data-arg="${h(arg)}" title="Vista inmediata en PDF">${ic('eye')}PDF</button><button class="tool" style="--k:var(--prt)" data-x="print" data-rep="${rep}" data-arg="${h(arg)}" title="Imprimir">${ic('printer')}Imprimir</button></div>`;
+const tools = (rep, arg = '') => `<div class="act-tools"><button class="tool" style="--k:var(--xls)" data-x="xlsx" data-rep="${rep}" data-arg="${h(arg)}" title="Descargar en Excel">${ic('file-spreadsheet')}Excel</button><button class="tool" style="--k:var(--pdf)" data-x="view" data-rep="${rep}" data-arg="${h(arg)}" title="Vista inmediata en PDF">${ic('eye')}PDF</button>${rep === 'informe' ? `<button class="tool" style="--k:#2b579a" data-x="docx" data-rep="${rep}" data-arg="${h(arg)}" title="Descargar en Word (.docx)">${ic('file-text')}Word</button>` : ''}<button class="tool" style="--k:var(--prt)" data-x="print" data-rep="${rep}" data-arg="${h(arg)}" title="Imprimir">${ic('printer')}Imprimir</button></div>`;
 const act = (n, i, hint, a, rep, arg) => { const lk = rep && !a && typeof planRepOk === 'function' && !planRepOk(rep); return `<div class="act ${lk ? 'locked' : ''}" ${lk ? 'title="No incluido en su plan actual"' : ''}><button class="act-main" ${a ? `data-a="${a}"` : `data-x="view" data-rep="${rep}" data-arg="${h(arg || '')}"`}><span class="ico">${ic(i)}</span><span><b>${h(n)}</b><small>${h(hint)}</small></span></button>${rep ? tools(rep, arg) : ''}</div>`; };
 const card = (title, icon, body, tag = '', extra = '') => `<section class="card"><div class="card-h">${ic(icon)}<h3>${h(title)}</h3>${tag ? `<span class="tag">${tag}</span>` : ''}${extra}</div>${body}</section>`;
 const kpi = (k, v, s = '', col = '') => `<div class="kpi" ${col ? `style="--k:var(${col})"` : ''}><div class="k">${h(k)}</div><div class="v">${v}</div>${s ? `<div class="s">${s}</div>` : ''}</div>`;
@@ -5115,7 +5296,7 @@ VIEWS.reportes = { render(el) {
   ${act('Reporte de bienes en estado malo', 'circle-x', `${fmtI(n.malos)} bienes (malo, chatarra, RAEE)`, null, 'malos')}
   ${act('Reporte de alta', 'badge-plus', `${fmtI(S.inv.filter(b => b.verif && String(b.fecha || '').slice(0, 4) === String(ENG.year(S.cfg.corte))).length)} bienes adquiridos en el ejercicio ${ENG.year(S.cfg.corte)}`, null, 'alta')}
   ${act('Acta de conciliación', 'file-pen-line', 'Anexo 05 con firmas', null, 'acta')}
-  ${act('Informe final', 'file-check', 'Resultados, conciliación y recomendaciones', null, 'informe')}
+  ${act('Informe final', 'file-check', `Estructura oficial (I–VII) · ${h(S.cfg.entidad.nombre || 'entidad activa')} · ejercicio ${ENG.year(S.cfg.corte)} · PDF, Word y Excel`, null, 'informe')}
   ${act('Bienes registrados sin aplicación del umbral', 'scale', `${fmtI(VAL().filter(x => x.f.includes('CTA_UMBRAL')).length)} bienes con cuenta que no respeta el umbral UIT`, null, 'umbral')}
   ${act('Bienes con corrección de cuentas', 'replace', `${fmtI(S.inv.filter(b => b.ctaCorr && b.cta && b.ctaCorr !== b.cta).length)} bienes con cuenta contable corregida`, null, 'correccion')}
   ${act('Migración al SIGA MP', 'database-zap', 'Estructura de 54 columnas lista para carga', null, 'migracion')}</div></div>`;
@@ -6299,7 +6480,7 @@ document.addEventListener('click', async e => {
   const t = e.target.closest('[data-toggle]'); if (t) { const id = t.dataset.toggle; openMods.has(id) ? openMods.delete(id) : openMods.add(id); return renderNav(); }
   const x = e.target.closest('[data-x]'); if (x) { const arg = x.dataset.arg || ''; let key = x.dataset.rep, a = arg;
     if (key === 'notas' && arg) { const [k, v] = arg.split(':'); a = k === 'id' ? NOTAS().filter(n => n.id === +v) : NOTAS().filter(n => n.tipo === v); }
-    toast(x.dataset.x === 'xlsx' ? 'Generando Excel…' : x.dataset.x === 'view' ? 'Abriendo vista PDF…' : 'Preparando impresión…', x.dataset.x === 'xlsx' ? 'xls' : 'pdf', 1500);
+    toast(x.dataset.x === 'docx' ? 'Generando Word…' : x.dataset.x === 'xlsx' ? 'Generando Excel…' : x.dataset.x === 'view' ? 'Abriendo vista PDF…' : 'Preparando impresión…', x.dataset.x === 'xlsx' ? 'xls' : 'pdf', 1500);
     setTimeout(() => REP.exportar(key, x.dataset.x, a), 30); return; }
   const a = e.target.closest('[data-a]'); if (a) { const fn = VIEWS[CUR]?.act?.[a.dataset.a] || GLOBAL_ACT[a.dataset.a] || GLOBAL_ACT_EXTRA[a.dataset.a]; if (fn) { try { await (SAN_VIEWS.has(CUR) ? withSan(() => fn(a, e)) : fn(a, e)); } catch (er) { console.error(er); toast(er.message, 'bad'); } } return; }
   if (VIEWS[CUR]?.click) SAN_VIEWS.has(CUR) ? withSan(() => VIEWS[CUR].click(e)) : VIEWS[CUR].click(e);
